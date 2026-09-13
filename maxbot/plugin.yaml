@@ -1,0 +1,57 @@
+name: max-platform
+label: MAX
+kind: platform
+version: 0.1.0
+description: >
+  Плагин платформы MAX (max.ru) для гейтвея Hermes Agent. Подключает бота MAX:
+  текст, markdown, медиа (входящие image/video/audio/file/sticker/share/contact/location),
+  inline-кнопки (approve/deny, clarify, пикеры), streaming-превью, cron-доставку.
+  Транспорты: long polling (по умолчанию) и webhook.
+author: hermes-max-gateway
+requires_env:
+  - name: MAX_ACCESS_TOKEN
+    description: "Токен бота MAX из кабинета «MAX для бизнеса» (business.max.ru)"
+    prompt: "Токен доступа бота MAX"
+    url: "https://business.max.ru/self"
+    password: true
+optional_env:
+  - name: MAX_ALLOWED_USERS
+    description: "Разрешённые user_id через запятую (пусто = никому)"
+    prompt: "Разрешённые пользователи (csv user_id)"
+    password: false
+  - name: MAX_ALLOW_ALL_USERS
+    description: "Разрешить всем (только для разработки)"
+    prompt: "Разрешить всем? (true/false)"
+    password: false
+  - name: MAX_HOME_CHANNEL
+    description: "chat_id для cron-доставки и уведомлений"
+    prompt: "Домашний канал (chat_id)"
+    password: false
+  - name: MAX_UPDATES_MODE
+    description: "Режим апдейтов: polling (по умолчанию) или webhook"
+    prompt: "Режим апдейтов (polling/webhook)"
+    password: false
+  - name: MAX_WEBHOOK_URL
+    description: "Публичный HTTPS-URL для webhook-режима"
+    prompt: "Webhook URL"
+    password: false
+  - name: MAX_WEBHOOK_PORT
+    description: "Локальный порт webhook-сервера (по умолчанию 8443)"
+    prompt: "Webhook порт"
+    password: false
+  - name: MAX_WEBHOOK_SECRET
+    description: "Секрет для проверки запросов webhook"
+    prompt: "Webhook секрет"
+    password: true
+  - name: MAX_API_BASE
+    description: "Переопределение базового URL API (тесты)"
+    prompt: "Базовый URL API"
+    password: false
+  - name: MAX_GROUP_ISOLATION
+    description: "В группах не опираться на личную память/контекст (channel_prompt, true по умолчанию)"
+    prompt: "Изоляция групповых ответов? (true/false)"
+    password: false
+  - name: MAX_DISABLE_LINK_PREVIEW
+    description: "Скрывать превью ссылок в сообщениях бота (true по умолчанию)"
+    prompt: "Скрывать превью ссылок? (true/false)"
+    password: false
