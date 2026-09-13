@@ -12,7 +12,7 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from agent.memory_provider import MemoryProvider, RecallStatus
+from agent.memory_provider import MemoryProvider, RecallStatus, is_trivial_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +139,8 @@ class ChatMemoryProvider(MemoryProvider):
         return blob[:_BUILTIN_CAP]
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
+        if is_trivial_prompt(query):  # «ок», «спасибо», команды — не тратим контекст на память
+            return ""
         if session_id:
             self._bind(session_id)
         blocks = []
@@ -152,6 +154,10 @@ class ChatMemoryProvider(MemoryProvider):
         return "\n\n".join(blocks)[:4500]
 
     def recall_status(self) -> Optional[RecallStatus]:
+        # индикатор «💬 recalled N memory» в чате — только по явному желанию
+        import os
+        if os.environ.get("MAX_MEMORY_INDICATOR", "").lower() not in ("1", "true", "yes"):
+            return None
         if self._notes or (self._key.startswith("max-dm-") and self._builtin_block()):
             return RecallStatus("чат", max(1, len(self._notes)), glyph="💬")
         return None
