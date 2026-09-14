@@ -21,14 +21,14 @@ streaming-превью, cron-доставка.
 
 ```bash
 # 1) через менеджер плагинов hermes (после публикации репо на GitHub)
-hermes plugins install <ваш-логин>/hermes-max-gateway/maxbot
+hermes plugins install MrYadro/hermes-max-gateway/maxbot
 hermes plugins enable max-platform
 
 # 2) pip-пакетом (в то же окружение, где стоит hermes)
-pip install git+https://github.com/<вы>/hermes-max-gateway.git
+pip install git+https://github.com/MrYadro/hermes-max-gateway.git
 
 # 3) каталогом плагинов
-git clone https://github.com/<вы>/hermes-max-gateway.git /tmp/hmg
+git clone https://github.com/MrYadro/hermes-max-gateway.git /tmp/hmg
 cp -r /tmp/hmg/maxbot ~/.hermes/plugins/maxbot
 ```
 
@@ -96,7 +96,7 @@ Live-приёмка пройдена: текст/markdown/сегментация
 
 ```bash
 # под пользователем, от которого работает hermes
-hermes plugins install <ваш-логин>/hermes-max-gateway/maxbot   # или cp -r maxbot ~/.hermes/plugins/
+hermes plugins install MrYadro/hermes-max-gateway/maxbot   # или cp -r maxbot ~/.hermes/plugins/
 grep -q SSL_CERT_FILE ~/.hermes/.env || echo "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" >> ~/.hermes/.env
 hermes plugins enable max-platform
 hermes gateway restart
