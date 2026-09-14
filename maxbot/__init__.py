@@ -1,5 +1,4 @@
 """Плагин платформы MAX для гейтвея Hermes Agent."""
-import contextlib
 
 # module-level: так memory-лоадер находит провайдера по имени каталога.
 # Guard: в окружении без hermes (pip install) импорт не должен валить entry-point скан.
@@ -12,10 +11,6 @@ except ImportError:  # hermes не установлен — платформен
 def register(ctx):
     from .adapter import MaxAdapter, check_requirements, is_connected, validate_config
     from .hooks import _apply_yaml_config, _env_enablement, _standalone_send, interactive_setup
-
-    with contextlib.suppress(Exception):
-        from .glm_stt import GlmVideoStt
-        ctx.register_transcription_provider(GlmVideoStt())
 
     ctx.register_platform(
         name="max",

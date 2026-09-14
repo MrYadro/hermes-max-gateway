@@ -113,10 +113,6 @@ _EXT_TO_MIME = {
 }
 
 
-def _is_truthy(value: str) -> bool:
-    return str(value or "").strip().lower() in ("1", "true", "yes", "on")
-
-
 def _mime_for(path: str, default: str) -> str:
     """MIME по расширению скачанного файла — ядро ждёт настоящие типы в media_types."""
     return _EXT_TO_MIME.get(_file_ext(os.path.basename(path)), default)
@@ -663,7 +659,6 @@ class MaxAdapter(BasePlatformAdapter):
 
     async def _collect_media(self, msg):
         paths, types, texts = [], [], []
-        prefer_glm_stt = _is_truthy(os.getenv("MAX_STT_PREFER_GLM", ""))
         attachments = await self._refreshed_attachments(msg)
         for att in attachments:
             logger.info("max: вложение type=%s payload=%s", att.type, str(att.payload)[:250])
@@ -675,7 +670,7 @@ class MaxAdapter(BasePlatformAdapter):
                     if path := await self._download_cached(att, cache_audio_from_bytes, ".mp3", _MEDIA_EXT_BY_MIME):
                         # mime обязателен: ядро гоняет STT только по audio/* из media_types
                         paths.append(path), types.append(_mime_for(path, "audio/mpeg"))
-                    if (tr := att.payload.get("transcription")) and not prefer_glm_stt:
+                    if (tr := att.payload.get("transcription")):
                         texts.append(f"[расшифровка голосового] {tr}")
                 elif att.type in ("file", "video"):
                     ext = _file_ext(att.payload.get("filename"))

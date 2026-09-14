@@ -70,6 +70,43 @@ async def test_exec_approval_buttons_and_resolve(monkeypatch):
     await disp.dispatch(_cb("ea:100:once:1"))
     assert resolved == [("sess:1", "once")]
     assert api.answered and api.edited["m.cb"][0]
+    # кнопки исчезают: MAX удаляет вложения только по пустому массиву
+    assert api.edited["m.cb"][1] == []
+
+
+async def test_buttons_removed_after_picker_choice(monkeypatch):
+    from maxbot import interactive as I
+
+    async def fake_clarify(cid, response):
+        return None
+
+    monkeypatch.setattr(I, "_resolve_clarify", fake_clarify)
+    disp, api = make_dispatcher()
+    picked = []
+
+    async def on_choice(chat_id, value):
+        picked.append(value)
+        return None
+
+    await disp.send_choice_picker("100", "Модель:", [
+        {"label": "большая", "value": "big"}, {"label": "малая", "value": "small"}],
+        "sess:1", on_choice)
+    await disp.dispatch(_cb("cp:100:0"))
+    assert picked == ["big"]
+    assert api.edited["m.cb"][1] == []  # клавиатура снята
+
+
+async def test_clarify_other_keeps_buttons(monkeypatch):
+    from maxbot import interactive as I
+
+    marked = []
+    monkeypatch.setattr(I, "_mark_clarify_awaiting", lambda cid: marked.append(cid))
+    disp, api = make_dispatcher()
+    await disp.send_clarify("100", "Какой формат?", ["A", "B"], "cl.1", "sess:1")
+    await disp.dispatch(_cb("cl:100:cl.1:-1"))
+    assert marked == ["cl.1"]
+    # «Другое» НЕ закрывает уточнение — кнопки остаются (attachments не трогаем)
+    assert api.edited["m.cb"][1] is None
 
 
 async def test_exec_approval_smart_denied(monkeypatch):

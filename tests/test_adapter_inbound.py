@@ -242,31 +242,8 @@ async def test_collect_media_reports_mime_types(monkeypatch):
     assert types[0].startswith("audio/")  # STT-контракт ядра
     assert types[1].startswith("image/")
     assert types[2].startswith("video/")
-
-
-async def test_collect_media_prefers_glm_stt(monkeypatch):
-    """MAX_STT_PREFER_GLM=1: расшифровку даёт STT-провайдер, дубль от MAX не вставляем."""
-    import os as _os
-
-    from maxbot.models import Attachment, Message, MessageBody
-
-    async def fake_dl(att, cache_fn, default_ext, mime_map=None, is_doc=False):
-        return f"/tmp/x{default_ext}"
-
-    async def fake_refresh(msg):
-        return msg.body.attachments
-
-    adapter = make_adapter()
-    monkeypatch.setattr(adapter, "_download_cached", fake_dl)
-    monkeypatch.setattr(adapter, "_refreshed_attachments", fake_refresh)
-    monkeypatch.setenv("MAX_STT_PREFER_GLM", "1")
-
-    msg = Message(body=MessageBody(text="", attachments=[
-        Attachment(type="audio", payload={"transcription": "расшифровка MAX"})]),
-        chat_id=1, chat_type="dialog")
-    _, _, texts = await adapter._collect_media(msg)
-    assert "расшифровка MAX" not in texts
-    _os.environ.pop("MAX_STT_PREFER_GLM", None)
+    # расшифровка MAX остаётся текстом — сторонний STT не настроен
+    assert "расшифровка" in texts.lower() and "привет" in texts
 
 
 def _aiter(items):

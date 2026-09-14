@@ -187,12 +187,19 @@ class InteractiveDispatcher:
             logger.exception("max: callback %r не обработан", payload)
 
     async def _finish(self, cb: Callback, toast: str, edit_text: str,
-                      edit_attachments: Optional[list] = None) -> None:
+                      edit_attachments: Optional[list] = ()) -> None:
+        """Завершить нажатие: toast + правка исходного сообщения.
+
+        ``edit_attachments`` по умолчанию — пустой список: MAX удаляет кнопки
+        только по пустому массиву (отсутствие поля = «без изменений»).
+        Передай ``None``, чтобы клавиатуру оставить (например, «Другое»).
+        """
         with contextlib.suppress(Exception):
             await self.api.api_answer(cb.callback_id, toast)
         if cb.message and cb.message.body.mid:
             with contextlib.suppress(Exception):
-                await self.api.api_edit(cb.message.body.mid, edit_text, edit_attachments)
+                await self.api.api_edit(cb.message.body.mid, edit_text,
+                                        list(edit_attachments) if edit_attachments is not None else None)
 
     async def _on_exec_approval(self, cb: Callback) -> None:
         parts = (cb.payload.split(":") + ["", "", "", ""])[:4]
@@ -227,7 +234,10 @@ class InteractiveDispatcher:
                 await self._finish(cb, "⌛ Уже обработано", "⌛ Уже обработано")
                 return
             _mark_clarify_awaiting(clarify_id)
-            await self._finish(cb, "✍️ Напишите ответ", "✍️ Напишите свой ответ следующим сообщением")
+            # «Другое» не закрывает уточнение — кнопки остаются (attachments не трогаем)
+            await self._finish(cb, "✍️ Напишите ответ",
+                               "✍️ Напишите свой ответ следующим сообщением",
+                               edit_attachments=None)
             return
         session_key = self.clarify_state.pop(clarify_id, None)
         if not session_key:
