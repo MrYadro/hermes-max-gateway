@@ -105,6 +105,22 @@ def _file_ext(filename) -> str:
         return ".bin"
     return "." + name.rsplit(".", 1)[-1].lower()
 
+
+_EXT_TO_MIME = {
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif",
+    ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".m4a": "audio/mp4", ".wav": "audio/wav",
+    ".mp4": "video/mp4",
+}
+
+
+def _is_truthy(value: str) -> bool:
+    return str(value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _mime_for(path: str, default: str) -> str:
+    """MIME по расширению скачанного файла — ядро ждёт настоящие типы в media_types."""
+    return _EXT_TO_MIME.get(_file_ext(os.path.basename(path)), default)
+
 def _greeting_keyboard() -> list:
     from .interactive import keyboard_attachment
     return [keyboard_attachment([[
@@ -647,22 +663,26 @@ class MaxAdapter(BasePlatformAdapter):
 
     async def _collect_media(self, msg):
         paths, types, texts = [], [], []
+        prefer_glm_stt = _is_truthy(os.getenv("MAX_STT_PREFER_GLM", ""))
         attachments = await self._refreshed_attachments(msg)
         for att in attachments:
             logger.info("max: вложение type=%s payload=%s", att.type, str(att.payload)[:250])
             try:
                 if att.type == "image":
                     if path := await self._download_cached(att, cache_image_from_bytes, ".jpg", _MEDIA_EXT_BY_MIME):
-                        paths.append(path), types.append("image")
+                        paths.append(path), types.append(_mime_for(path, "image/jpeg"))
                 elif att.type == "audio":
                     if path := await self._download_cached(att, cache_audio_from_bytes, ".mp3", _MEDIA_EXT_BY_MIME):
-                        paths.append(path), types.append("audio")
-                    if (tr := att.payload.get("transcription")):
+                        # mime обязателен: ядро гоняет STT только по audio/* из media_types
+                        paths.append(path), types.append(_mime_for(path, "audio/mpeg"))
+                    if (tr := att.payload.get("transcription")) and not prefer_glm_stt:
                         texts.append(f"[расшифровка голосового] {tr}")
                 elif att.type in ("file", "video"):
                     ext = _file_ext(att.payload.get("filename"))
                     if path := await self._download_cached(att, cache_document_from_bytes, ext, _MEDIA_EXT_BY_MIME, is_doc=True):
-                        paths.append(path), types.append(att.type)
+                        paths.append(path)
+                        types.append(_mime_for(path, "video/mp4") if att.type == "video"
+                                     else "application/octet-stream")
                     if att.type == "video" and att.payload.get("token"):
                         with contextlib.suppress(Exception):
                             info = await self._client.get_video_info(str(att.payload["token"]))
@@ -675,7 +695,7 @@ class MaxAdapter(BasePlatformAdapter):
                     if path := await self._download_cached(att, cache_image_from_bytes, ".png",
                                                            _MEDIA_EXT_BY_MIME):
                         paths.append(path)
-                        types.append("image")
+                        types.append("image/png")
                     texts.append("[стикер]")
                 elif att.type == "share":
                     title = att.payload.get("title") or att.payload.get("url") or "шеринг"
