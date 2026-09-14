@@ -39,6 +39,7 @@ class Callback:
     callback_id: str
     payload: str
     message: Optional[Message] = None
+    user: Optional["User"] = None
     raw: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -82,6 +83,7 @@ def parse_update(d: Dict[str, Any]) -> Update:
         msg = parse_message(cb["message"]) if cb.get("message") else None
         callback = Callback(callback_id=str(cb.get("callback_id") or ""),
                             payload=str(cb.get("payload") or ""), message=msg,
+                            user=_user(cb.get("user")),
                             raw=cb if isinstance(cb, dict) else {})
     return Update(update_type=d.get("update_type") or "", marker=d.get("marker"), raw=d,
                   message=parse_message(d["message"]) if d.get("message") else None,

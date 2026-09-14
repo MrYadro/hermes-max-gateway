@@ -686,6 +686,9 @@ class MaxAdapter(BasePlatformAdapter):
                                     f"{k}={info[k]}" for k in ("duration", "size", "width", "height")
                                     if info.get(k) is not None))
                 elif att.type == "sticker":
+                    if (code := att.payload.get("code")):
+                        from .state import remember_sticker
+                        remember_sticker(code)  # агент сможет переотправить через max_sticker
                     # превью-картинка стикера (если доступна) — агент увидит её через vision
                     if path := await self._download_cached(att, cache_image_from_bytes, ".png",
                                                            _MEDIA_EXT_BY_MIME):

@@ -1,5 +1,6 @@
 """Тонкий асинхронный клиент MAX Bot API (platform-api2.max.ru)."""
 import asyncio
+import contextlib
 import logging
 import random
 import time
@@ -265,25 +266,54 @@ class MaxClient:
     async def patch_chat(self, chat_id: int, **fields) -> dict:
         return await self._request("PATCH", f"/chats/{chat_id}", json_body=fields)
 
-    async def get_upload_url(self, kind: str) -> str:
+    async def get_upload_slot(self, kind: str):
+        """POST /uploads → (url, token|None). Для video/audio токен приходит сразу."""
         resp = await self._request("POST", "/uploads", params={"type": kind})
-        url = resp.get("url")
+        return str(resp.get("url") or ""), resp.get("token")
+
+    async def get_upload_url(self, kind: str) -> str:
+        url, _ = await self.get_upload_slot(kind)
         if not url:
             raise MaxApiError(200, "uploads: нет url", code="no_url")
-        return str(url)
+        return url
 
-    async def upload_to_url(self, upload_url: str, path: str) -> str:
+    async def upload_to_url(self, upload_url: str, path: str, token_hint: Optional[str] = None) -> str:
+        """Файловый POST на upload-хост: ТОЛЬКО curl-подобный multipart
+        (поле data + per-part Content-Type) — API-хосты отвергают иное.
+
+        Токен: video/audio — из token_hint (файл отвечает retval-XML);
+        image/file — в ответе загрузки (топ-уровень или карта photos).
+        """
         import os
         with open(path, "rb") as fh:
             resp = await self._client.post(
-                upload_url, data={"data": (os.path.basename(path), fh)},
-                headers={"Authorization": self._client.headers["Authorization"]})
+                upload_url,
+                files={"data": (os.path.basename(path), fh.read(),
+                                "application/octet-stream")})
         if resp.status_code >= 400:
             raise MaxApiError(resp.status_code, resp.text[:200], code="upload_failed")
-        token = resp.json().get("token")
-        if not token:
-            raise MaxApiError(resp.status_code, "upload: нет token", code="no_token")
-        return str(token)
+        with contextlib.suppress(ValueError):
+            body = resp.json()
+            if isinstance(body, dict):
+                tok = _extract_upload_token(body)
+                if tok:
+                    return str(tok)
+        if token_hint:
+            return str(token_hint)
+        raise MaxApiError(resp.status_code, "upload: нет token", code="no_token")
+
+
+def _extract_upload_token(body: Dict[str, Any]) -> Optional[str]:
+    """Токен из ответа upload-хоста: топ-уровень или карта вида photos/{id}/{token}."""
+    tok = body.get("token")
+    if isinstance(tok, str) and tok:
+        return tok
+    for value in body.values():
+        if isinstance(value, dict):
+            inner = _extract_upload_token(value)
+            if inner:
+                return inner
+    return None
 
 
 def extract_message_id(resp: Dict[str, Any]) -> Optional[str]:

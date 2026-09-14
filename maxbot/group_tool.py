@@ -74,7 +74,7 @@ def _session_chat_id() -> Optional[int]:
 
 
 async def _max_group_handler(args: Dict[str, Any], **kwargs) -> str:
-    from maxbot.max_api import MaxApiError, MaxClient
+    from .max_api import MaxApiError, MaxClient
 
     action = str(args.get("action") or "").strip()
     chat_id = args.get("chat_id") or _session_chat_id()
@@ -148,8 +148,8 @@ async def _max_group_handler(args: Dict[str, Any], **kwargs) -> str:
 
 
 async def _max_channel_handler(args: Dict[str, Any], **kwargs) -> str:
-    from maxbot.markdown import comment_markdown
-    from maxbot.max_api import MaxApiError, MaxClient
+    from .markdown import comment_markdown
+    from .max_api import MaxApiError, MaxClient
 
     action = str(args.get("action") or "").strip()
     post_id = str(args.get("post_id") or "").strip()
@@ -187,7 +187,7 @@ async def _max_channel_handler(args: Dict[str, Any], **kwargs) -> str:
 
 
 def register_group_tool(ctx) -> None:
-    from maxbot.adapter import check_requirements
+    from .adapter import check_requirements
 
     ctx.register_tool(
         name="max_channel",

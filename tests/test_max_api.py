@@ -149,6 +149,42 @@ async def test_upload_flow():
     assert token == "TOK" and "data" in str(up.calls.last.request.content)
 
 
+@respx.mock
+async def test_upload_photos_map_token():
+    """image-хост отвечает {"photos": {<id>: {"token": ...}}} — достаём токен."""
+    respx.post("https://iu.oneme.ru/u").mock(return_value=httpx.Response(
+        200, json={"photos": {"abc==": {"token": "PHOTO-TOK"}}}))
+    async with client() as c:
+        token = await c.upload_to_url("https://iu.oneme.ru/u", "tests/fixtures/tiny.png")
+    assert token == "PHOTO-TOK"
+
+
+@respx.mock
+async def test_upload_multipart_part_has_content_type():
+    """API-хосты требуют curl-подобный multipart: per-part Content-Type обязателен."""
+    route = respx.post("https://fu.oneme.ru/u").mock(
+        return_value=httpx.Response(200, json={"token": "T"}))
+    async with client() as c:
+        await c.upload_to_url("https://fu.oneme.ru/u", "tests/fixtures/tiny.png")
+    body = route.calls.last.request.content.decode("utf-8", "replace")
+    assert 'Content-Disposition: form-data; name="data"; filename=' in body
+    assert "Content-Type: application/octet-stream" in body
+
+
+@respx.mock
+async def test_upload_video_token_from_slot():
+    """video/audio: токен приходит в /uploads, файловой POST возвращает retval."""
+    slot = respx.post(f"{BASE}/uploads").mock(return_value=httpx.Response(
+        200, json={"url": "https://omub.okcdn.ru/u", "token": "VID-TOK"}))
+    respx.post("https://omub.okcdn.ru/u").mock(
+        return_value=httpx.Response(200, text="<retval>1</retval>"))
+    async with client() as c:
+        url, hint = await c.get_upload_slot("video")
+        token = await c.upload_to_url(url, "tests/fixtures/tiny.png", token_hint=hint)
+    assert slot.calls.last.request.url.params["type"] == "video"
+    assert token == "VID-TOK"
+
+
 def test_extract_message_id_variants():
     assert extract_message_id({"message": {"body": {"mid": "m1"}}}) == "m1"
     assert extract_message_id({"message_id": "m2"}) == "m2"

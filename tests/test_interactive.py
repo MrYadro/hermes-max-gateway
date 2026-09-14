@@ -34,12 +34,11 @@ def make_dispatcher():
 
 
 def _cb(payload, chat_id=100):
+    # реальный message_callback MAX не содержит message — только user и payload
     return parse_update({
         "update_type": "message_callback",
         "callback": {"callback_id": "cb.9", "payload": payload,
-                     "message": {"body": {"mid": "m.cb", "text": ""},
-                                 "recipient": {"chat_id": chat_id, "chat_type": "dialog"},
-                                 "sender": {"user_id": 1, "name": "Иван"}}},
+                     "user": {"user_id": 1, "name": "Иван"}},
     }).callback
 
 
@@ -69,9 +68,9 @@ async def test_exec_approval_buttons_and_resolve(monkeypatch):
     assert "rm -rf /tmp/x" in text
     await disp.dispatch(_cb("ea:100:once:1"))
     assert resolved == [("sess:1", "once")]
-    assert api.answered and api.edited["m.cb"][0]
+    assert api.answered and api.edited["mid.1"][0]
     # кнопки исчезают: MAX удаляет вложения только по пустому массиву
-    assert api.edited["m.cb"][1] == []
+    assert api.edited["mid.1"][1] == []
 
 
 async def test_buttons_removed_after_picker_choice(monkeypatch):
@@ -93,7 +92,7 @@ async def test_buttons_removed_after_picker_choice(monkeypatch):
         "sess:1", on_choice)
     await disp.dispatch(_cb("cp:100:0"))
     assert picked == ["big"]
-    assert api.edited["m.cb"][1] == []  # клавиатура снята
+    assert api.edited["mid.1"][1] == []  # клавиатура снята
 
 
 async def test_clarify_other_keeps_buttons(monkeypatch):
@@ -106,7 +105,7 @@ async def test_clarify_other_keeps_buttons(monkeypatch):
     await disp.dispatch(_cb("cl:100:cl.1:-1"))
     assert marked == ["cl.1"]
     # «Другое» НЕ закрывает уточнение — кнопки остаются (attachments не трогаем)
-    assert api.edited["m.cb"][1] is None
+    assert api.edited["mid.1"][1] is None
 
 
 async def test_exec_approval_smart_denied(monkeypatch):
@@ -150,7 +149,7 @@ async def test_slash_confirm_and_picker(monkeypatch):
     disp, api = make_dispatcher()
     await disp.send_slash_confirm("100", "/reload-mcp", "Перезагрузить?", "sess:3", "cf.1")
     await disp.dispatch(_cb("sc:100:cancel:cf.1"))
-    assert api.edited["m.cb"][0].startswith("❌")
+    assert api.edited["mid.1"][0].startswith("❌")
     assert api.sent["100"][0] == "resolved:cancel"  # результат ядра уходит в чат, не <coroutine>
     picked = []
     await disp.send_choice_picker(
@@ -179,7 +178,7 @@ async def test_picker_out_of_range_marks_stale_and_pops():
     await disp.send_choice_picker("100", "Модель", [{"value": "big", "label": "Big"}], "s",
                                   on_choice_selected=lambda cid, v: calls.append((cid, v)) or None)
     await disp.dispatch(_cb("cp:100:5"))  # индекс за пределами списка
-    assert api.edited["m.cb"][0] == "⌛ Вариант устарел"
+    assert api.edited["mid.1"][0] == "⌛ Вариант устарел"
     assert disp.picker_state == {}
     await disp.dispatch(_cb("cp:100:0"))  # повторное нажатие — уже обработано
     assert calls == []

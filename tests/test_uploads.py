@@ -10,12 +10,12 @@ class FakeClient:
     def __init__(self):
         self.upload_calls = []
 
-    async def get_upload_url(self, kind):
+    async def get_upload_slot(self, kind):
         self.kind = kind
-        return "http://upload.test/u"
+        return "http://upload.test/u", None
 
-    async def upload_to_url(self, url, path):
-        self.upload_calls.append((url, path))
+    async def upload_to_url(self, url, path, token_hint=None):
+        self.upload_calls.append((url, path, token_hint))
         return f"TOK{len(self.upload_calls)}"
 
 

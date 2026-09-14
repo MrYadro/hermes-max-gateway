@@ -15,8 +15,8 @@ class Uploader:
         token = self._cache.get(key)
         if token:
             return token
-        url = await self._client.get_upload_url(kind)
-        token = await self._client.upload_to_url(url, path)
+        url, token_hint = await self._client.get_upload_slot(kind)
+        token = await self._client.upload_to_url(url, path, token_hint=token_hint)
         self._cache[key] = token
         return token
 

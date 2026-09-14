@@ -10,7 +10,14 @@ except ImportError:  # hermes не установлен — платформен
 
 def register(ctx):
     from .adapter import MaxAdapter, check_requirements, is_connected, validate_config
+    from .geo_tool import register_geo_tool
+    from .group_tool import register_group_tool
     from .hooks import _apply_yaml_config, _env_enablement, _standalone_send, interactive_setup
+    from .sticker_tool import register_sticker_tool
+
+    register_group_tool(ctx)    # max_group/max_channel
+    register_geo_tool(ctx)      # max_geo
+    register_sticker_tool(ctx)  # max_sticker
 
     ctx.register_platform(
         name="max",

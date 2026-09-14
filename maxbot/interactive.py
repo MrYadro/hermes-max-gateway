@@ -70,7 +70,7 @@ class InteractiveDispatcher:
         rows = [flat[i:i + 2] for i in range(0, len(flat), 2)]
         mid = await self.api.api_send(prompt.chat_id, sanitize_markdown(prompt.text),
                                       [keyboard_attachment(rows)])
-        self.approval_state[approval_id] = prompt.session_key
+        self.approval_state[approval_id] = {"session_key": prompt.session_key, "mid": mid}
         from gateway.platforms.base import SendResult
         return SendResult(success=True, message_id=mid)
 
@@ -81,7 +81,7 @@ class InteractiveDispatcher:
                  {"text": "❌ Отмена", "payload": f"sc:{chat_id}:cancel:{confirm_id}"}]]
         mid = await self.api.api_send(
             chat_id, sanitize_markdown(f"⚙️ *{title}*\n{message}"), [keyboard_attachment(rows)])
-        self.slash_state[confirm_id] = session_key
+        self.slash_state[confirm_id] = {"session_key": session_key, "mid": mid}
         from gateway.platforms.base import SendResult
         return SendResult(success=True, message_id=mid)
 
@@ -93,7 +93,7 @@ class InteractiveDispatcher:
             payloads.append(f"cl:{clarify_id}:{i}")
         rows.append([{"text": "✍️ Другое", "payload": f"cl:{chat_id}:{clarify_id}:-1"}])
         mid = await self.api.api_send(chat_id, f"❓ {question}", [keyboard_attachment(rows)])
-        self.clarify_state[clarify_id] = session_key
+        self.clarify_state[clarify_id] = {"session_key": session_key, "mid": mid}
         self._clarify_choices[clarify_id] = {i: str(c) for i, c in enumerate(choices or [])}
         from gateway.platforms.base import SendResult
         return SendResult(success=True, message_id=mid)
@@ -187,41 +187,44 @@ class InteractiveDispatcher:
             logger.exception("max: callback %r не обработан", payload)
 
     async def _finish(self, cb: Callback, toast: str, edit_text: str,
-                      edit_attachments: Optional[list] = ()) -> None:
-        """Завершить нажатие: toast + правка исходного сообщения.
+                      edit_attachments: Optional[list] = (), mid: Optional[str] = None) -> None:
+        """Завершить нажатие: toast + правка сообщения с клавиатурой.
 
-        ``edit_attachments`` по умолчанию — пустой список: MAX удаляет кнопки
-        только по пустому массиву (отсутствие поля = «без изменений»).
-        Передай ``None``, чтобы клавиатуру оставить (например, «Другое»).
+        ``mid`` — id сообщения с кнопками (из состояния отправки): колбэк MAX
+        не содержит message, берём из своего стейта. ``edit_attachments`` по
+        умолчанию — пустой список: MAX удаляет кнопки только по пустому массиву
+        (отсутствие поля = «без изменений»). Передай ``None``, чтобы оставить
+        клавиатуру (например, «Другое»).
         """
         with contextlib.suppress(Exception):
             await self.api.api_answer(cb.callback_id, toast)
-        if cb.message and cb.message.body.mid:
+        target = mid or (cb.message.body.mid if cb.message and cb.message.body else None)
+        if target:
             with contextlib.suppress(Exception):
-                await self.api.api_edit(cb.message.body.mid, edit_text,
+                await self.api.api_edit(target, edit_text,
                                         list(edit_attachments) if edit_attachments is not None else None)
 
     async def _on_exec_approval(self, cb: Callback) -> None:
         parts = (cb.payload.split(":") + ["", "", "", ""])[:4]
         _, _chat, choice, _id = parts
-        session_key = self.approval_state.pop(int(_id), None) if _id.isdigit() else None
-        if not session_key:
+        st = self.approval_state.pop(int(_id), None) if _id.isdigit() else None
+        if not st:
             await self._finish(cb, "⌛ Уже обработано", "⌛ Подтверждение уже обработано")
             return
-        count = _resolve_approval(session_key, choice)
+        count = _resolve_approval(st["session_key"], choice)
         label = _EA_LABELS.get(choice, "Готово") if count else "⌛ Истекло ожидание"
-        user = cb.message.sender.name if cb.message and cb.message.sender else ""
-        await self._finish(cb, label, f"{label}" + (f" — {user}" if user else ""))
+        user = cb.user.name if cb.user else ""
+        await self._finish(cb, label, f"{label}" + (f" — {user}" if user else ""), mid=st["mid"])
 
     async def _on_slash_confirm(self, cb: Callback) -> None:
         _, _chat, choice, confirm_id = (cb.payload.split(":") + ["", "", ""])[:4]
-        session_key = self.slash_state.pop(confirm_id, None)
-        if not session_key:
+        st = self.slash_state.pop(confirm_id, None)
+        if not st:
             await self._finish(cb, "⌛ Уже обработано", "⌛ Уже обработано")
             return
-        result_text = await _resolve_slash_confirm(session_key, confirm_id, choice)
+        result_text = await _resolve_slash_confirm(st["session_key"], confirm_id, choice)
         await self._finish(cb, _SC_LABELS.get(choice, "Готово"),
-                           _SC_LABELS.get(choice, "Готово"))
+                           _SC_LABELS.get(choice, "Готово"), mid=st["mid"])
         if result_text:
             with contextlib.suppress(Exception):
                 await self.api.api_send(_chat or "", sanitize_markdown(str(result_text)))
@@ -234,20 +237,22 @@ class InteractiveDispatcher:
                 await self._finish(cb, "⌛ Уже обработано", "⌛ Уже обработано")
                 return
             _mark_clarify_awaiting(clarify_id)
+            mid = self.clarify_state.get(clarify_id, {}).get("mid")
             # «Другое» не закрывает уточнение — кнопки остаются (attachments не трогаем)
             await self._finish(cb, "✍️ Напишите ответ",
                                "✍️ Напишите свой ответ следующим сообщением",
-                               edit_attachments=None)
+                               edit_attachments=None, mid=mid)
             return
-        session_key = self.clarify_state.pop(clarify_id, None)
-        if not session_key:
+        st = self.clarify_state.pop(clarify_id, None)
+        if not st:
             await self._finish(cb, "⌛ Уже обработано", "⌛ Уже обработано")
             return
         # восстановить текст выбора из кнопок исходного сообщения нельзя —
         # резолвер ядра принимает текст; берём из payload-таблицы, сохранённой при отправке
         choice_text = self._clarify_choices.get(clarify_id, {}).get(int(idx_s), str(idx_s))
         _resolve_clarify(clarify_id, choice_text)
-        await self._finish(cb, f"✅ Выбрано: {choice_text}", f"✅ Выбрано: {choice_text}")
+        await self._finish(cb, f"✅ Выбрано: {choice_text}", f"✅ Выбрано: {choice_text}",
+                           mid=st["mid"])
 
     async def _on_picker(self, cb: Callback) -> None:
         try:
@@ -262,7 +267,8 @@ class InteractiveDispatcher:
         choices = state.get("choices") or []
         if not (0 <= idx < len(choices)):
             self.picker_state.pop(chat_id, None)
-            await self._finish(cb, "⌛ Вариант устарел", "⌛ Вариант устарел")
+            await self._finish(cb, "⌛ Вариант устарел", "⌛ Вариант устарел",
+                               mid=state.get("message_id"))
             return
         choice = choices[idx]
         label = str(choice.get("label") or choice.get("value") or "")
@@ -275,8 +281,8 @@ class InteractiveDispatcher:
             else:
                 result_text = result
         self.picker_state.pop(chat_id, None)
-        await self._finish(cb, f"☑️ {label}", f"☑️ Выбрано: {label}")
-        if result_text and cb.message:
+        await self._finish(cb, f"☑️ {label}", f"☑️ Выбрано: {label}", mid=state.get("message_id"))
+        if result_text:
             with contextlib.suppress(Exception):
                 await self.api.api_send(chat_id, sanitize_markdown(str(result_text)))
 
@@ -293,7 +299,8 @@ class InteractiveDispatcher:
         entries = state.get("entries") or []
         if not (0 <= idx < len(entries)):
             self.model_picker_state.pop(chat_id, None)
-            await self._finish(cb, "⌛ Вариант устарел", "⌛ Вариант устарел — введите /model <имя>")
+            await self._finish(cb, "⌛ Вариант устарел", "⌛ Вариант устарел — введите /model <имя>",
+                               mid=state.get("message_id"))
             return
         provider_slug, model_id, _ = entries[idx]
         handler = state.get("on_model_selected")
@@ -305,7 +312,8 @@ class InteractiveDispatcher:
             else:
                 result_text = result
         self.model_picker_state.pop(chat_id, None)
-        await self._finish(cb, f"☑️ {model_id}", f"☑️ Модель: {model_id}")
+        await self._finish(cb, f"☑️ {model_id}", f"☑️ Модель: {model_id}",
+                           mid=state.get("message_id"))
         if result_text:
             with contextlib.suppress(Exception):
                 await self.api.api_send(chat_id, sanitize_markdown(str(result_text)))
