@@ -90,6 +90,15 @@ def test_adapter_remembers_sticker_codes(monkeypatch):
     assert [s["code"] for s in state.recent_stickers()] == ["s77"]
 
 
+async def test_sticker_find_by_keyword():
+    res = await _max_sticker_handler({"action": "find", "query": "мишка сердце"})
+    assert "5082fbb" in res  # «Мишка держит сердце»
+    res2 = await _max_sticker_handler({"action": "find", "query": "злой"})
+    assert "50829bb" in res2  # «Злой разгневанный медвежонок»
+    res3 = await _max_sticker_handler({"action": "find", "query": "неттакоготовара"})
+    assert "нет стикеров" in res3.lower()
+
+
 def test_register_sticker_tool_direct():
     tools = []
 

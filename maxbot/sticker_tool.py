@@ -2,6 +2,7 @@
 import contextlib
 import json
 import logging
+import os
 from typing import Any, Dict, Optional
 
 from .state import recent_stickers
@@ -11,15 +12,39 @@ logger = logging.getLogger(__name__)
 _STICKER_SCHEMA = {
     "type": "object",
     "properties": {
-        "action": {"type": "string", "enum": ["send", "recent"],
+        "action": {"type": "string", "enum": ["send", "recent", "find"],
                    "description": "send — отправить стикер (code; по умолчанию последний "
-                                  "присланный пользователем); recent — список недавних кодов"},
-        "code": {"type": "string", "description": "код стикера (из recent или от пользователя)"},
+                                  "присланный пользователем); recent — коды недавних "
+                                  "присланных; find — поиск по каталогу стандартных "
+                                  "наборов (query, например «мишка радуется»)"},
+        "code": {"type": "string", "description": "код стикера (из find/recent или от пользователя)"},
+        "query": {"type": "string", "description": "для find: что искать (эмоция/действие)"},
         "chat_id": {"type": "integer",
                     "description": "ID чата MAX; по умолчанию — текущий чат сессии"},
     },
     "required": ["action"],
 }
+
+
+def _catalog() -> list:
+    path = os.path.join(os.path.dirname(__file__), "sticker_catalog.json")
+    with contextlib.suppress(OSError, ValueError):
+        return json.load(open(path, encoding="utf-8"))
+    return []
+
+
+def _find_stickers(query: str, limit: int = 8) -> list:
+    words = [w.lower() for w in query.split() if w]
+    if not words:
+        return []
+    scored = []
+    for item in _catalog():
+        text = f"{item.get('set', '')} {item.get('desc', '')}".lower()
+        score = sum(1 for w in words if w in text)
+        if score:
+            scored.append((score, item))
+    scored.sort(key=lambda p: -p[0])
+    return [dict(item, score=s) for s, item in scored[:limit]]
 
 
 def _secret(name: str, default: str = "") -> str:
@@ -47,6 +72,15 @@ async def _max_sticker_handler(args: Dict[str, Any], **kwargs) -> str:
             return ("Недавних стикеров нет: пользователь ещё не присылал стикеры "
                     "в этой сессии гейтвея.")
         return json.dumps(seen, ensure_ascii=False)
+    if action == "find":
+        query = str(args.get("query") or args.get("code") or "").strip()
+        if not query:
+            return json.dumps(_catalog(), ensure_ascii=False)[:3500] or "Каталог пуст."
+        found = _find_stickers(query)
+        if not found:
+            return (f"В каталоге нет стикеров под «{query}». "
+                    "Попробуй другие слова (эмоция, действие).")
+        return json.dumps(found, ensure_ascii=False)
 
     code = str(args.get("code") or "").strip()
     if not code:
@@ -86,5 +120,7 @@ def register_sticker_tool(ctx) -> None:
         handler=_max_sticker_handler,
         check_fn=check_requirements,
         is_async=True,
-        description="Отправить стикер в чат MAX. По умолчанию — последний присланный "
-                    "пользователем стикер; recent — список недавних кодов стикеров.")
+        description="Стикеры MAX. find+query — поиск по каталогу стандартных наборов "
+                    "(например «мишка радуется», «сердце») возвращает коды; send+code — "
+                    "отправить (по умолчанию — последний присланный пользователем); "
+                    "recent — коды недавних присланных.")
