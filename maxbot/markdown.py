@@ -48,10 +48,6 @@ def _cell_width(cell: str) -> int:
     return width
 
 
-def _pad(cell: str, width: int) -> str:
-    return cell + " " * max(0, width - _cell_width(cell))
-
-
 _SEP_CHARS = set("-:\u2014\u2013\u2012 ")
 
 
@@ -76,12 +72,12 @@ def _strip_inline_md(cell: str) -> str:
 
 
 def _render_table(block) -> str:
-    rows, aligns = [], []
+    rows, header, aligns = [], None, []
+    first_table_line = next((ln.rstrip("\n") for ln in block if _is_table_line(ln)), "")
+    has_header = bool(first_table_line) and not _is_sep_line(first_table_line)
     for ln in block:
         stripped = ln.rstrip("\n")
         cells = _split_cells(stripped)
-        if cells is not None:
-            cells = [_strip_inline_md(c) for c in cells]
         if cells is None:
             continue
         if _is_sep_line(stripped):
@@ -89,47 +85,61 @@ def _render_table(block) -> str:
                 aligns = ["center" if c.startswith(":") and c.endswith(":")
                           else "right" if c.endswith(":") else "left" for c in cells]
             continue
+        cells = [_strip_inline_md(c) for c in cells]
+        if has_header and header is None:
+            header = cells
+            continue
         rows.append(cells)
-    if not rows:
+    if not rows and not header:
         return "".join(block)
-    ncols = max(len(r) for r in rows)
-    for r in rows:
+    all_rows = ([header] if header else []) + rows
+    ncols = max(len(r) for r in all_rows)
+    for r in all_rows:
         r.extend([""] * (ncols - len(r)))
     if len(aligns) < ncols:
         aligns = aligns + ["left"] * (ncols - len(aligns))
-    widths = [max(_cell_width(r[i]) for r in rows) for i in range(ncols)]
+    return _render_monospace_rows(all_rows, aligns, header is not None)
 
-    def _cell(row, i):
-        cell, w, a = row[i], widths[i], aligns[i]
-        gap = max(0, w - _cell_width(cell))
-        if a == "right":
-            return " " * gap + cell
-        if a == "center":
+
+_MONO_MAX_WIDTH = 80  # шире — перенос на 3+ экрана, читаемее строкой с «|»
+
+
+def _render_monospace_rows(rows, aligns, has_header) -> str:
+    """Таблица → по строке на запись, каждая завёрнута в инлайн-`код`.
+
+    ```-блоки не вариант: парсер MAX не находит закрывающий fence после
+    многобайтовых символов и «глотает» хвост сообщения. Инлайн-код рендерится
+    моноширинно, а при мягком переносе все строки ломаются по одной колонке —
+    выравнивание сохраняется даже на узком экране.
+    """
+    widths = [max(_cell_width(r[i]) for r in rows) for i in range(len(aligns))]
+    if sum(widths) + 2 * (len(widths) - 1) > _MONO_MAX_WIDTH:
+        return _render_vertical(rows, rows[0] if has_header else None)
+
+    def cell(row, i):
+        text = (row[i] or "").strip() or "—"
+        gap = max(0, widths[i] - _cell_width(text))
+        if aligns[i] == "right":
+            return " " * gap + text
+        if aligns[i] == "center":
             left = gap // 2
-            return " " * left + cell + " " * (gap - left)
-        return cell + " " * gap
+            return " " * left + text + " " * (gap - left)
+        return text + " " * gap
 
-    total_w = sum(widths) + 2 * (ncols - 1)
-    if ncols >= 2 and total_w > 60:
-        return _render_vertical(rows)  # широкие таблицы — вертикальные карточки
-    out = ["  ".join(_cell(r, i) for i in range(ncols)).rstrip() for r in rows]
-    return "```\n" + "\n".join(out) + "\n```"
+    return "\n".join(
+        "`" + "  ".join(cell(r, i) for i in range(len(aligns))).rstrip() + "`"
+        for r in rows)
 
 
-def _render_vertical(rows) -> str:
-    """Широкая таблица → карточки: мобильный рендер, без горизонтального скролла."""
-    headers = rows[0]
-    chunks = []
-    for r in rows[1:] if len(rows) > 1 else rows:
-        head = (r[0] or "").strip() or "—"
-        lines = [f"▪ *{head}*" if head != "—" else "▪"]
-        for i in range(1, len(r)):
-            if not (r[i] or "").strip():
-                continue
-            label = (headers[i] or "").strip()
-            lines.append(f"   {('*' + label + ':* ') if label else ''}{r[i]}")
-        chunks.append("\n".join(lines))
-    return "\n".join(chunks)
+def _render_vertical(rows, header=None) -> str:
+    """Очень широкая таблица → строка на запись с «|» (компактно при переносе)."""
+    lines = []
+    if header:
+        lines.append("**" + " | ".join(c or "—" for c in header) + "**")
+        rows = rows[1:]  # rows[0] — сам заголовок
+    for r in rows:
+        lines.append(" | ".join((c or "").strip() or "—" for c in r))
+    return "\n".join(lines)
 
 
 def _tables_to_code(text: str) -> str:
@@ -205,6 +215,11 @@ def _escape_marker(segment: str, ch: str) -> str:
             continue
         if i < n - 1 and segment[i + 1] == ch:
             continue
+        # intraword-подчёркивания (foo_bar) не маркеры вовсе — не собираем,
+        # иначе они попадают в «непарные» и экранируются (\_ виден в MAX буквально)
+        if ch == "_" and 0 < i < n - 1 and _WORD_RE.fullmatch(segment[i - 1]) \
+                and _WORD_RE.fullmatch(segment[i + 1]):
+            continue
         singles.append(i)
     if not singles:
         return segment
@@ -213,9 +228,6 @@ def _escape_marker(segment: str, ch: str) -> str:
     for i in singles:
         before = segment[i - 1] if i > 0 else ""
         after = segment[i + 1] if i < n - 1 else ""
-        # intraword-подчёркивания (foo_bar) оставляем как есть
-        if ch == "_" and _WORD_RE.fullmatch(before) and _WORD_RE.fullmatch(after):
-            continue
         can_close = bool(before) and not before.isspace()
         can_open = bool(after) and not after.isspace()
         if pending >= 0 and can_close:
@@ -261,9 +273,16 @@ def sanitize_markdown(text: str) -> str:
     text = _SESSION_RE.sub("", text)
     text = re.sub(r"[ \t]+(?:в|на|из|in)[ \t]+\(", " (", text)  # «Подробности в (» → «Подробности (»
     text = re.sub(r"[ \t]+([.,;:!?])", r"\1", text)
-    text = re.sub(r"(?m)[ \t]{2,}", " ", text)
+    # схлопываем пробелы, но НЕ внутри инлайн-кода: там живёт паддинг таблиц
+    text = _protect_inline_code(text, lambda t: re.sub(r"(?m)[ \t]{2,}", " ", t))
     text = _outside_code(text, _tables_to_code)
     text = _outside_code(text, _headings_to_bold)
     text = _clamp_links(text)
     text = _escape_stray(text)
     return text.strip()
+
+
+def _protect_inline_code(text: str, fn) -> str:
+    """Применить fn вне инлайн-`кода` и markdown-ссылок (но ВНУТРИ ```-блоков)."""
+    parts = re.split(r"(`[^`\n]*`|\[[^\]]*\]\([^)]*\))", text)
+    return "".join(p if p.startswith(("`", "[")) else fn(p) for p in parts)

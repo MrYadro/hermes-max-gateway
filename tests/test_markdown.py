@@ -12,11 +12,29 @@ def test_html_stripped():
 def test_table_to_code_block():
     md = "| Тип | Примечание |\n|---|---|\n| Картинки | ок |"
     out = sanitize_markdown(md)
-    assert out.startswith("```") and out.endswith("```")
-    assert "---" not in out and "|" not in out  # пайпы и разделитель убраны
-    lines = out.strip("`\n").splitlines()
-    assert lines[0] == "Тип       Примечание"  # колонки выровнены по ширине
-    assert lines[1] == "Картинки  ок"
+    assert "---" not in out  # разделитель убран
+    assert "```" not in out  # fenced-блоки не отправляем: парсер MAX их ломает
+    # каждая строка — инлайн-`код`: моноширинный рендер, колонки выровнены
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert lines[0] == "`Тип       Примечание`"  # 3 + 5 паддинга + 2 сепаратора
+    assert lines[1] == "`Картинки  ок`"
+    # выравнивание на обычных пробелах — они живучи внутри инлайн-кода
+    assert "  " in out
+
+
+def test_table_rows_monospace_idempotent():
+    # повторный проход не должен съедать паддинг внутри инлайн-кода
+    md = "| A | B |\n|---|---|\n| x | y |"
+    once = sanitize_markdown(md)
+    assert sanitize_markdown(once) == once
+
+
+def test_table_alignment_survives_space_collapse():
+    # NBSP-паддинг более не используется (карточки), но пробелы внутри
+    # значений ячеек должны сохраняться как есть
+    md = "| A | B |\n|---|---|\n| два слова | y |"
+    out = sanitize_markdown(md)
+    assert "два слова" in out
 
 
 def test_long_link_clamped():
@@ -80,36 +98,43 @@ def test_plain_quote_untouched():
 
 
 def test_table_alignment_respected():
+    # выравнивание снова работает: строки моноширинные (инлайн-код)
     md = "| Влево | По центру | Вправо |\n|:---|:---:|---:|\n| 1 | 2 | 3 |\n| текст | текст | текст |"
     out = sanitize_markdown(md)
-    lines = out.strip("`\n").splitlines()
-    assert lines[1].startswith(" ") is False  # левая — без отступа
-    assert lines[1].split("  ")[0] == "1"
-    # правая колонка: «3» и «текст» прижаты вправо одинаково
-    assert lines[1].rstrip().endswith("3") and lines[2].rstrip().endswith("текст")
+    assert "```" not in out
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    # правая колонка прижата вправо: закрывающие бэктики всех строк
+    # на одной позиции (последняя ячейка заканчивается у края)
+    closes = [ln.index("`", 1) for ln in lines]
+    assert closes[0] == closes[1] == closes[2]
+    assert lines[1].endswith("3`") and lines[2].endswith("текст`")
 
 
 def test_table_without_header_row():
     md = "|:---:|:---:|:---:|\n| раз | два | три |\n| X | Y | Z |"
     out = sanitize_markdown(md)
-    assert out.startswith("```") and "|" not in out
-    lines = out.strip("`\n").splitlines()
-    assert lines[0].strip().startswith("раз")
+    assert "```" not in out
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert len(lines) == 2  # без заголовка — только строки данных
+    assert lines[0].startswith("`раз")  # первая колонка выровнена по «раз»
+    assert "X" in lines[1] and "Z" in lines[1]
+
+
+def test_empty_cells_filled_with_dash():
+    out = sanitize_markdown("| A | B |\n|---|---|\n| x |  |")
+    assert "x  —" in out  # пустая ячейка — тире, колонка не схлопывается
 
 
 def test_emoji_variation_selector_width():
     from maxbot.markdown import _cell_width
     assert _cell_width("\U0001f170\ufe0f") == 2  # 🅰️ = глиф + VS16
     assert _cell_width("a") == 1
-    # таблица с эмодзи-ключкапами выравнивается как обычный текст
-    md = "| \U0001f170\ufe0f | a |\n|:---:|:---:|\n| x | y |"
-    out = sanitize_markdown(md)
-    assert out.strip("`\n").splitlines()[0].startswith("\U0001f170\ufe0f")
 
 
 def test_table_cells_inline_md_stripped():
     out = sanitize_markdown("| **Итого** | **≈753 400 ₽** |\n|---|---:|")
-    assert "Итого" in out and "**" not in out
+    # маркеры из ячеек зачищены, в моноширинной строке они не нужны
+    assert "Итого" in out and "**" not in out and "`" in out
 
 
 def test_tables_untouched_inside_code_block():
@@ -123,21 +148,42 @@ def test_hr_untouched_inside_code_block():
 
 
 def test_wide_table_renders_vertical_cards():
+    # шире 80 колонок — перенос на 3+ экрана тяжело читать: строка на запись с «|»
     long_pos = "очень длинная позиция " * 3
     md = f"| Категория | Позиция | Цена |\n|---|---|---|\n| Кухня | {long_pos} | 552300 |"
     out = sanitize_markdown(md)
-    assert "```" not in out  # без код-блока
-    assert "▪ *Кухня*" in out and "*Позиция:*" in out and "552300" in out
+    assert "```" not in out
+    assert "`" not in out  # без моноширинных строк
+    assert "Кухня |" in out and "552300" in out
 
 
 def test_fence_never_glues_to_previous_line():
     md = "Список покупок:\n| a | b |\n|---|---|\n| 1 | 2 |"
     out = sanitize_markdown(md)
-    assert "покупок:```" not in out
-    assert "\n```" in out
+    assert "покупок:`" not in out
+    assert "\n`" in out  # таблица начинается с новой строки
 
 
 def test_underscore_wrap_with_code_unwrapped():
     src = "_Text fallback: reply `/approve`, `/always`, or `/cancel`._"
     out = sanitize_markdown(src)
     assert out.startswith("Text fallback") and not out.startswith("_")
+
+
+# ── регрессия живого бага: таблица ломала рендер всего сообщения ──
+
+def test_table_does_not_break_markdown_after_it():
+    # MAX не поддерживает ``` — fenced-таблица «выключала» рендер хвоста:
+    # сырые ** и бэктики. Таблица должна уйти плоским текстом, хвост — целым.
+    md = ("| Сервис | Статус |\n|---|---|\n| example.org | 200 |\n\n"
+          "Проверка доступности — **по гео-подсети**, см. `*.example.com`.")
+    out = sanitize_markdown(md)
+    assert "```" not in out
+    assert "**по гео-подсети**" in out
+    assert "`*.example.com`" in out
+
+
+def test_intraword_underscores_untouched():
+    # snake_case-идентификаторы не экранируются: MAX покажет \_ буквально
+    assert sanitize_markdown("файл user_data_v2 обновлён") == "файл user_data_v2 обновлён"
+    assert sanitize_markdown("kolmogorov_smirnov, p_value") == "kolmogorov_smirnov, p_value"
