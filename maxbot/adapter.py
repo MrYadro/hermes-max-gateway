@@ -75,6 +75,36 @@ _MEDIA_EXT_BY_MIME = {
     "video/mp4": ".mp4",
 }
 
+# Консервативный сниф магических байтов: только однозначные сигналы.
+# Расширение — не граница доверия (контент всё равно недоверенный),
+# это лишь подсказка парсерам агента; не распознали — честный .bin.
+_MAGIC_EXT = (
+    (b"%PDF", ".pdf"),
+    (b"PK\x03\x04", ".zip"),  # docx/xlsx тоже zip-контейнеры
+    (b"OggS", ".ogg"),
+    (b"ID3", ".mp3"),
+    (b"7z\xbc\xaf\x27\x1c", ".7z"),
+    (b"Rar!\x1a\x07", ".rar"),
+    (b"\x1f\x8b", ".gz"),
+)
+
+
+def _sniff_ext(data: bytes) -> str:
+    for magic, ext in _MAGIC_EXT:
+        if data.startswith(magic):
+            return ext
+    if data[4:8] == b"ftyp":  # mp4/mov: size(4B) + 'ftyp'
+        return ".mp4"
+    return ".bin"
+
+
+def _file_ext(filename) -> str:
+    """Расширение из имени файла MAX-вложения; без расширения — .bin."""
+    name = str(filename or "")
+    if "." not in name:
+        return ".bin"
+    return "." + name.rsplit(".", 1)[-1].lower()
+
 def _greeting_keyboard() -> list:
     from .interactive import keyboard_attachment
     return [keyboard_attachment([[
@@ -630,7 +660,7 @@ class MaxAdapter(BasePlatformAdapter):
                     if (tr := att.payload.get("transcription")):
                         texts.append(f"[расшифровка голосового] {tr}")
                 elif att.type in ("file", "video"):
-                    ext = "." + str(att.payload.get("filename", "file.bin")).rsplit(".", 1)[-1]
+                    ext = _file_ext(att.payload.get("filename"))
                     if path := await self._download_cached(att, cache_document_from_bytes, ext, _MEDIA_EXT_BY_MIME, is_doc=True):
                         paths.append(path), types.append(att.type)
                     if att.type == "video" and att.payload.get("token"):
@@ -714,6 +744,8 @@ class MaxAdapter(BasePlatformAdapter):
                         return None
         data = bytes(buf)
         ext = mime_map.get(mime, default_ext) if mime_map else default_ext
+        if ext == ".bin":
+            ext = _sniff_ext(data)  # MAX не дал имя, content-type generic — смотрим магику
         if is_doc:
             return cache_fn(data, f"max_attachment{ext}")
         return cache_fn(data, ext)

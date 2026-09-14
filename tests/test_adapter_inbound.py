@@ -181,6 +181,44 @@ async def test_download_cached_allows_normal_size():
     assert path == "7:.jpg"  # без mime_map ext — дефолтный
 
 
+async def test_download_sniffs_magic_bytes_when_no_ext():
+    """MAX часто не присылает filename, а сервер отдаёт octet-stream:
+    расширение определяем по магике уже скачанного буфера."""
+    import httpx
+    import respx
+
+    from maxbot.models import Attachment
+
+    adapter = make_adapter()
+    cases = [
+        (b"%PDF-1.7 whatever", ".pdf"),
+        (b"PK\x03\x04zipdata", ".zip"),
+        (b"\x00\x00\x00\x18ftypmp42", ".mp4"),
+        (b"OggSxxxx", ".ogg"),
+        (b"ID3\x03tagdata", ".mp3"),
+        (b"7z\xbc\xaf\x27\x1c", ".7z"),
+        (b"Rar!\x1a\x07\x00", ".rar"),
+        (b"\x00\x01\x02\x03no-magic", ".bin"),  # не распознали — честный .bin
+    ]
+    for i, (content, expected) in enumerate(cases):
+        att = Attachment(type="file", payload={"url": f"http://test.max/f{i}"})
+        with respx.mock:
+            respx.get(f"http://test.max/f{i}").mock(
+                return_value=httpx.Response(
+                    200, content=content,
+                    headers={"content-type": "application/octet-stream"}))
+            ext = await adapter._download_cached(att, lambda data, ext: ext, ".bin")
+        assert ext == expected, (content, ext)
+
+
+def test_file_ext_from_filename():
+    from maxbot.adapter import _file_ext
+    assert _file_ext("report.pdf") == ".pdf"
+    assert _file_ext("archive.ZIP") == ".zip"
+    assert _file_ext("без-расширения") == ".bin"
+    assert _file_ext(None) == ".bin"
+
+
 async def test_group_username_mention_passes(monkeypatch):
     import re
 
