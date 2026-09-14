@@ -100,7 +100,7 @@ class PollingTransport:
 
 
 class WebhookTransport:
-    _SECRET_HEADERS = ("x-secret",)
+    _SECRET_HEADERS = ("x-max-bot-api-secret", "x-secret")
 
     def __init__(self, client, *, url: str, port: int, secret: Optional[str] = None,
                  path: str = "/max/webhook",
