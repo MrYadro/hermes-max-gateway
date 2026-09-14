@@ -78,7 +78,7 @@ class GlmVideoStt(_TranscriptionProvider):
 
     @property
     def name(self) -> str:
-        return "glm-video"
+        return "glm"
 
     @property
     def display_name(self) -> str:

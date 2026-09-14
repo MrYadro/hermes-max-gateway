@@ -14,7 +14,7 @@ def make_provider():
 
 def test_provider_identity():
     p = make_provider()
-    assert p.name == "glm-video"
+    assert p.name == "glm"
     assert p.default_model() == "glm-5.3-flash"
 
 
@@ -55,7 +55,7 @@ def test_transcribe_wraps_audio_into_mp4_and_calls_model(monkeypatch, tmp_path):
     res = make_provider().transcribe(str(src), language="ru", prompt="Гермес")
 
     assert res["success"] is True and res["transcript"] == "привет мир"
-    assert res["provider"] == "glm-video"
+    assert res["provider"] == "glm"
     assert calls["src"] == str(src)
     assert calls["model"] == "glm-5.3-flash"
     assert calls["b64_len"] > 0
@@ -164,4 +164,4 @@ def test_register_registers_provider():
 
     import maxbot
     maxbot.register(FakeCtx())
-    assert any(getattr(p, "name", "") == "glm-video" for p in registered)
+    assert any(getattr(p, "name", "") == "glm" for p in registered)
