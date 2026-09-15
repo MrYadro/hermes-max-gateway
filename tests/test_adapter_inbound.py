@@ -116,7 +116,7 @@ async def test_location_and_contact_as_text():
     d = _upd_message(text="")
     d.message.body.attachments = [
         __import__("maxbot.models", fromlist=["Attachment"]).Attachment(
-            type="location", payload={"latitude": 55.75, "longitude": 37.61}),
+            type="location", latitude=55.75, longitude=37.61),
         __import__("maxbot.models", fromlist=["Attachment"]).Attachment(
             type="contact",
             payload={"vcf_info": "BEGIN:VCARD\r\nTEL;TYPE=cell:79990000000\r\nFN:Иван\r\nEND:VCARD"}),
@@ -296,3 +296,32 @@ async def test_dm_events_have_no_isolation_prompt():
             break
         await asyncio.sleep(0.01)
     assert col.events and not col.events[0].channel_prompt
+
+
+async def test_collect_media_location_from_flat_fields(monkeypatch):
+    """Геометка: координаты берутся с плоских полей вложения (после догрузки)."""
+    from maxbot.adapter import MaxAdapter
+    from maxbot.models import Attachment, Message, MessageBody
+
+    class FakeCfg:
+        extra = {}
+
+    fresh = Message(body=MessageBody(attachments=[
+        Attachment(type="location", latitude=11.1111, longitude=22.2222)]),
+        chat_id=1, chat_type="dialog")
+
+    class FakeClient:
+        async def get_message(self, mid):
+            return fresh
+
+    adapter = MaxAdapter(FakeCfg(), client=FakeClient(), transport=None)
+    msg = Message(body=MessageBody(mid="m1", attachments=[Attachment(type="location")]),
+                  chat_id=1, chat_type="dialog")
+
+    async def fake_refresh(m):
+        return m.body.attachments
+
+    monkeypatch.setattr(adapter, "_refreshed_attachments", fake_refresh)
+    _, _, texts = await adapter._collect_media(msg)
+    assert "11.1111" in texts and "22.2222" in texts
+    assert "openstreetmap" in texts

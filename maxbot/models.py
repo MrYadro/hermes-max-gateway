@@ -14,6 +14,9 @@ class User:
 class Attachment:
     type: str
     payload: Dict[str, Any] = field(default_factory=dict)
+    # location идёт плоскими полями вложения (не в payload) — не теряем
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 
 @dataclass
@@ -62,7 +65,8 @@ def _user(d: Dict[str, Any]) -> Optional[User]:
 
 
 def _attachments(items: Any) -> List[Attachment]:
-    return [Attachment(type=i.get("type", ""), payload=i.get("payload") or {})
+    return [Attachment(type=i.get("type", ""), payload=i.get("payload") or {},
+                       latitude=i.get("latitude"), longitude=i.get("longitude"))
             for i in items or [] if isinstance(i, dict)]
 
 

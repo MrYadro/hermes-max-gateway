@@ -717,26 +717,21 @@ class MaxAdapter(BasePlatformAdapter):
                             fn = f"{fn} (id {info['user_id']})".strip()
                     texts.append(f"[контакт] {fn} {tel}".strip())
                 elif att.type == "location":
-                    lat = att.payload.get("latitude") or att.payload.get("lat")
-                    lon = (att.payload.get("longitude") or att.payload.get("lon")
-                           or att.payload.get("lng"))
+                    lat, lon = att.latitude, att.longitude
                     if lat is None and msg.body.mid:
                         # апдейт приходит без координат — догружаем полное сообщение
                         with contextlib.suppress(Exception):
                             fresh = await self._client.get_message(str(msg.body.mid))
                             for fa in fresh.body.attachments:
-                                if fa.type == "location":
-                                    lat = fa.payload.get("latitude") or fa.payload.get("lat")
-                                    lon = (fa.payload.get("longitude") or fa.payload.get("lon")
-                                           or fa.payload.get("lng"))
+                                if fa.type == "location" and fa.latitude is not None:
+                                    lat, lon = fa.latitude, fa.longitude
                     if lat is not None:
                         texts.append(
                             f"[геолокация] {lat}, {lon} "
                             f"( https://www.openstreetmap.org/?mlat={lat}&mlon={lon} )")
                     else:
-                        # MAX Bot API не отдаёт координаты боту даже в полном сообщении
                         texts.append("[геолокация] пользователь поделился геопозицией "
-                                     "(координаты недоступны через Bot API)")
+                                     "(координаты недоступны)")
             except Exception:
                 logger.exception("max: вложение %s не обработано", att.type)
         return paths, types, "\n".join(texts)

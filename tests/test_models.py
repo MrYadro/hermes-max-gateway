@@ -57,3 +57,15 @@ def test_parse_tolerant_to_unknown_fields():
     d = _message_created()
     d["message"]["unknown_future_field"] = {"a": 1}
     assert parse_update(d).message.raw["unknown_future_field"] == {"a": 1}
+
+
+def test_parse_location_flat_fields():
+    """Координаты приходят плоскими полями вложения — парсер не должен их терять."""
+    d = _message_created()
+    d["message"]["body"]["attachments"] = [
+        {"type": "location", "latitude": 11.111111, "longitude": 22.222222}]
+    msg = parse_update(d).message
+    loc = msg.body.attachments[0]
+    assert loc.type == "location"
+    assert loc.latitude == 11.111111 and loc.longitude == 22.222222
+    assert loc.payload == {}
