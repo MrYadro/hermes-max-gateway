@@ -673,6 +673,7 @@ async def test_greeting_button_flashes_progress_then_restores():
             await _aio.sleep(0.2)
 
     adapter.handle_message = _slow()
+    adapter._interactive = I.InteractiveDispatcher(adapter)
     I._FLASH_DELAY = 0.03
     try:
         await adapter.on_greeting_cmd(cb)
