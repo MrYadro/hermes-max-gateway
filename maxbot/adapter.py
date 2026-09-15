@@ -226,8 +226,18 @@ def _greeting_keyboard(chat_id) -> list:
     ]])]
 
 
-# строка tool-прогресса: «⚙️ имя_инструмента: "превью"» — имя в snake_case (+ аргументы, ×N)
-_TOOL_LINE_RE = re.compile(r"^\S{1,3} [a-z_][a-z0-9_.]*(\([^)]*\))?(: .*)?(\s\(×\d+\))?$")
+# строка прогресса: «эмодзи Глагол…» (терминал/браузер/поиск — agent.display._TOOL_VERBS)
+# или «эмодзи snake_case_имя: "превью"» (кастомные тузы); опц. счётчик (×N)
+try:  # список глаголов берём из ядра, чтобы не рассинхронизироваться
+    from agent.display import _TOOL_VERBS as __CORE_TOOL_VERBS
+    _VERB_ALT = "|".join(sorted((re.escape(v) for v in __CORE_TOOL_VERBS.values()),
+                                 key=len, reverse=True))
+except Exception:  # ядра нет (тесты без HERMES_AGENT_SRC) — минимальный набор
+    _VERB_ALT = "Running|Running code|Searching the web|Browsing|Reading|Writing"
+_TOOL_LINE_RE = re.compile(
+    rf"^\S{{1,3}} (?:{_VERB_ALT})[^\n]*(?:\s\(×\d+\))?$"
+    rf"|^\S{{1,3}} [a-z_][a-z0-9_.]*(?:\([^)]*\))?(?:: .*)?(?:\s\(×\d+\))?$"
+)
 
 
 def _last_tool_line(text: str) -> Optional[str]:

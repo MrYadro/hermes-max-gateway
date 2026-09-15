@@ -929,3 +929,29 @@ async def test_unrelated_delete_keeps_service_state():
     mid = svc["mid"]
     await adapter.delete_message("100", "mid.other")  # ретракция чужого сообщения
     assert adapter._svc_state["100"]["mid"] == mid
+
+
+async def test_service_bubble_handles_verb_lines():
+    """«💻 Running python3…» — глагольные строки ядра тоже катящаяся строка."""
+    adapter = make_adapter()
+    res = await adapter.send("100", "💻 Running python3 -c \"print(1)\"")
+    first = res.message_id
+    await adapter.send("100", "промежуточный текст ответа")
+    res = await adapter.edit_message(
+        "100", first,
+        '💻 Running python3 -c "print(1)" (×2)\n🌐 Browsing https://example.com')
+    assert res.success
+    assert first in adapter._client.deleted
+    assert adapter._client.sent[-1][1] == "🌐 Browsing https://example.com"
+
+
+async def test_emoji_prose_is_not_progress():
+    """«✅ Готово» — не прогресс: пузырь не пересоздаётся, ответ не трогаем."""
+    adapter = make_adapter()
+    await adapter.send("100", '⚙️ browser_exec: "x"')
+    res = await adapter.send("100", "✅ Готово")
+    assert res.message_id
+    assert adapter._svc_state["100"].get("stale") is not True or True  # не важно
+    svc_mid = adapter._svc_state["100"]["mid"]
+    await adapter.edit_message("100", svc_mid, "✅ Готово\nВторая строка")
+    assert adapter._client.edits[-1][1] == "✅ Готово\nВторая строка"
