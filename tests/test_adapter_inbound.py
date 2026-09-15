@@ -742,3 +742,67 @@ class TestFileNames:
         await adapter._handle_update(upd)
         assert saved["ext"] == ".docx"
         assert "ТЗ_НГ.docx" in saved["name"]
+
+
+async def test_document_cache_dedup_by_hash(tmp_path, monkeypatch):
+    """Одинаковое содержимое — один файл в кэше (контент-хеш в имени)."""
+    import hashlib
+
+    from maxbot import adapter as A
+
+    calls = []
+    doc_dir = tmp_path / "docs"
+    doc_dir.mkdir()
+    monkeypatch.setattr(A, "get_document_cache_dir", lambda: doc_dir)
+
+    def fake_cache(data, name):
+        calls.append(name)
+        p = doc_dir / f"doc_{name}"
+        p.write_bytes(data)
+        return str(p)
+
+    class _Att:
+        filename = "ТЗ НГ.docx"
+        payload = {}
+
+    att = _Att()
+
+    class _Resp:
+        status_code = 200
+        headers = {"content-type": "application/octet-stream"}
+
+        def raise_for_status(self):
+            pass
+
+        async def aiter_bytes(self):
+            yield b"data"
+
+    class _FakeHttpx:
+        class AsyncClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            def stream(self, method, url):
+                class _Ctx:
+                    async def __aenter__(self):
+                        return _Resp()
+
+                    async def __aexit__(self, *a):
+                        return False
+                return _Ctx()
+
+    monkeypatch.setattr(A, "_httpx", _FakeHttpx)
+    p1 = await A.MaxAdapter._download_cached(
+        object(), att, fake_cache, ".docx", is_doc=True, url="https://x")
+    p2 = await A.MaxAdapter._download_cached(
+        object(), att, fake_cache, ".docx", is_doc=True, url="https://x")
+    assert p1 == p2
+    assert len(calls) == 1  # второй раз — переиспользовали
+    assert hashlib.sha1(b"data").hexdigest()[:10] in calls[0]
+    assert "ТЗ_НГ" in calls[0]

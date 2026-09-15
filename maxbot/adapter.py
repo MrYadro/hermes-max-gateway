@@ -17,6 +17,7 @@ from gateway.platforms.base import (
     cache_audio_from_bytes,
     cache_document_from_bytes,
     cache_image_from_bytes,
+    get_document_cache_dir,
 )
 from gateway.platforms.event import MessageEvent, MessageType
 
@@ -1013,9 +1014,17 @@ class MaxAdapter(BasePlatformAdapter):
         if ext == ".bin":
             ext = _sniff_ext(data)  # MAX не дал имя, content-type generic — смотрим магику
         if is_doc:
-            # оригинальное имя (если дал MAX) — агент видит настоящий заголовок файла
-            base = re.sub(r"[^\w.\- ]+", "_", str(att.filename or "").strip())
-            return cache_fn(data, base if base else f"max_attachment{ext}")
+            # оригинальное имя + контент-хеш: одинаковое содержимое не плодит копий
+            base = re.sub(r"[^\w.\-]+", "_", str(att.filename or "").strip())
+            stem, _, suff = (base or f"max_attachment{ext}").rpartition(".")
+            hashed = f"{stem or 'max_attachment'}.{hashlib.sha1(data).hexdigest()[:10]}" \
+                     f".{suff if stem else ext.lstrip('.') or 'bin'}"
+            try:
+                for existing in get_document_cache_dir().glob(f"*_{hashed}"):
+                    return str(existing)  # уже скачано раньше — переиспользуем
+            except Exception:
+                pass
+            return cache_fn(data, hashed)
         return cache_fn(data, ext)
 
 
