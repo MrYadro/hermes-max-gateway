@@ -117,6 +117,15 @@ def _mime_for(path: str, default: str) -> str:
     """MIME по расширению скачанного файла — ядро ждёт настоящие типы в media_types."""
     return _EXT_TO_MIME.get(_file_ext(os.path.basename(path)), default)
 
+
+def _lowest_video_url(info: Optional[dict]) -> Optional[str]:
+    """Минимальное доступное разрешение из GET /videos — экономия токенов/трафика."""
+    urls = (info or {}).get("urls") or {}
+    for key in ("mp4_144", "mp4_240", "mp4_360", "mp4_480", "mp4_720", "mp4_1080"):
+        if urls.get(key):
+            return str(urls[key])
+    return None
+
 def _greeting_keyboard() -> list:
     from .interactive import keyboard_attachment
     return [keyboard_attachment([[
@@ -674,17 +683,28 @@ class MaxAdapter(BasePlatformAdapter):
                         texts.append(f"[расшифровка голосового] {tr}")
                 elif att.type in ("file", "video"):
                     ext = _file_ext(att.payload.get("filename"))
-                    if path := await self._download_cached(att, cache_document_from_bytes, ext, _MEDIA_EXT_BY_MIME, is_doc=True):
-                        paths.append(path)
-                        types.append(_mime_for(path, "video/mp4") if att.type == "video"
-                                     else "application/octet-stream")
+                    dl_url, thumb_url = None, None
                     if att.type == "video" and att.payload.get("token"):
                         with contextlib.suppress(Exception):
                             info = await self._client.get_video_info(str(att.payload["token"]))
+                            dl_url = _lowest_video_url(info)
+                            thumb_url = ((info.get("thumbnail") or {}).get("url"))
                             if info:
                                 texts.append("[видео: %s]" % ", ".join(
                                     f"{k}={info[k]}" for k in ("duration", "size", "width", "height")
                                     if info.get(k) is not None))
+                    if path := await self._download_cached(att, cache_document_from_bytes, ext, _MEDIA_EXT_BY_MIME, is_doc=True, url=dl_url):
+                        paths.append(path)
+                        types.append(_mime_for(path, "video/mp4") if att.type == "video"
+                                     else "application/octet-stream")
+                    if thumb_url:
+                        # миниатюра — кадр-превью: агент «видит» видео без видеоподдержки модели
+                        with contextlib.suppress(Exception):
+                            if tpath := await self._download_cached(
+                                    att, cache_image_from_bytes, ".jpg",
+                                    _MEDIA_EXT_BY_MIME, url=thumb_url):
+                                paths.append(tpath)
+                                types.append("image/jpeg")
                 elif att.type == "sticker":
                     if (code := att.payload.get("code")):
                         from .state import remember_sticker
@@ -736,8 +756,9 @@ class MaxAdapter(BasePlatformAdapter):
                 logger.exception("max: вложение %s не обработано", att.type)
         return paths, types, "\n".join(texts)
 
-    async def _download_cached(self, att, cache_fn, default_ext, mime_map=None, is_doc=False):
-        url = att.payload.get("url") or att.payload.get("preview_url")
+    async def _download_cached(self, att, cache_fn, default_ext, mime_map=None, is_doc=False,
+                               url=None):
+        url = url or att.payload.get("url") or att.payload.get("preview_url")
         if not url and (msg_mid := att.payload.get("mid")):
             with contextlib.suppress(Exception):
                 fresh = await self._client.get_message(str(msg_mid))

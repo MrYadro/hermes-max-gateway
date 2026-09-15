@@ -75,7 +75,7 @@ def test_adapter_remembers_sticker_codes(monkeypatch):
     async def fake_refresh(msg):
         return msg.body.attachments
 
-    async def fake_dl(att, cache_fn, default_ext, mime_map=None, is_doc=False):
+    async def fake_dl(att, cache_fn, default_ext, mime_map=None, is_doc=False, url=None):
         return None
 
     state.SEEN_STICKERS.clear()
@@ -107,7 +107,7 @@ def test_adapter_known_sticker_skips_vision(monkeypatch):
 
     dl_calls = []
 
-    async def fake_dl(att, cache_fn, default_ext, mime_map=None, is_doc=False):
+    async def fake_dl(att, cache_fn, default_ext, mime_map=None, is_doc=False, url=None):
         dl_calls.append(att.type)
         return "/tmp/x.png"
 

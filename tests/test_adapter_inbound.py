@@ -223,7 +223,7 @@ async def test_collect_media_reports_mime_types(monkeypatch):
     """Голосовые попадают в STT-пайплайн ядра только при audio/* mime в media_types."""
     from maxbot.models import Attachment, Message, MessageBody
 
-    async def fake_dl(att, cache_fn, default_ext, mime_map=None, is_doc=False):
+    async def fake_dl(att, cache_fn, default_ext, mime_map=None, is_doc=False, url=None):
         return f"/tmp/x{default_ext}"
 
     async def fake_refresh(msg):
@@ -325,3 +325,43 @@ async def test_collect_media_location_from_flat_fields(monkeypatch):
     _, _, texts = await adapter._collect_media(msg)
     assert "11.1111" in texts and "22.2222" in texts
     assert "openstreetmap" in texts
+
+
+async def test_video_downloads_lowest_resolution(monkeypatch):
+    """Видео агенту качаем в минимальном доступном разрешении — экономия токенов."""
+    from maxbot.adapter import MaxAdapter
+    from maxbot.models import Attachment, Message, MessageBody
+
+    class FakeCfg:
+        extra = {}
+
+    class FakeClient:
+        async def get_video_info(self, token):
+            return {"urls": {"mp4_720": "http://v/720.mp4", "mp4_144": "http://v/144.mp4"}}
+
+    adapter = MaxAdapter(FakeCfg(), client=FakeClient(), transport=None)
+    msg = Message(body=MessageBody(attachments=[
+        Attachment(type="video", payload={"url": "http://v/orig.mp4", "token": "T"})]),
+        chat_id=1, chat_type="dialog")
+
+    async def fake_refresh(m):
+        return m.body.attachments
+
+    got = {}
+
+    async def fake_dl(att, cache_fn, default_ext, mime_map=None, is_doc=False, url=None):
+        got["url"] = url or att.payload.get("url")
+        return "/tmp/v.mp4"
+
+    monkeypatch.setattr(adapter, "_refreshed_attachments", fake_refresh)
+    monkeypatch.setattr(adapter, "_download_cached", fake_dl)
+    await adapter._collect_media(msg)
+    assert got["url"] == "http://v/144.mp4"  # минимальная рендия, не оригинал
+
+
+def test_lowest_video_url_helper():
+    from maxbot.adapter import _lowest_video_url
+    info = {"urls": {"mp4_1080": "a", "mp4_480": "b", "mp4_240": "c", "hls": "h"}}
+    assert _lowest_video_url(info) == "c"
+    assert _lowest_video_url({"urls": None}) is None
+    assert _lowest_video_url({}) is None
