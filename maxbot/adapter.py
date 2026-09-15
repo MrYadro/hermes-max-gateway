@@ -184,12 +184,13 @@ def _extract_frames(video_path: str, count: int = 4) -> list:
                     for f in sorted(_glob.glob(f"{tmp}/f_*.jpg"))[:count]]
     return []
 
-def _greeting_keyboard() -> list:
+def _greeting_keyboard(chat_id) -> list:
+    """Callback-кнопки: нажал → команда выполняется тихо, тост вместо сообщения."""
     from .interactive import keyboard_attachment
     return [keyboard_attachment([[
-        {"type": "message", "text": "🆕 Новая сессия", "payload": "/new"},
-        {"type": "message", "text": "📋 Статус", "payload": "/status"},
-        {"type": "message", "text": "ℹ️ Помощь", "payload": "/help"},
+        {"type": "callback", "text": "🆕 Новая сессия", "payload": f"gc:{chat_id}:new"},
+        {"type": "callback", "text": "📋 Статус", "payload": f"gc:{chat_id}:status"},
+        {"type": "callback", "text": "ℹ️ Помощь", "payload": f"gc:{chat_id}:help"},
     ]])]
 
 
@@ -411,12 +412,23 @@ class MaxAdapter(BasePlatformAdapter):
         if len(parts) != 4:
             return
         _, chat_id, cmd, page = parts
+        await self._run_synthetic_command(chat_id, f"/{cmd} {page}")
+
+    async def on_greeting_cmd(self, cb) -> None:
+        """Кнопка приветствия (payload gc:<chat_id>:<cmd>): тихо выполняем команду."""
+        parts = cb.payload.split(":")
+        if len(parts) != 3:
+            return
+        _, chat_id, cmd = parts
+        await self._run_synthetic_command(chat_id, f"/{cmd}")
+
+    async def _run_synthetic_command(self, chat_id: str, text: str) -> None:
         user_id, user_name = self._chat_users.get(str(chat_id), ("", ""))
         chat_type = "dm" if str(chat_id).isdigit() else "group"
         source = self.build_source(
             chat_id=str(chat_id), chat_name=str(chat_id), chat_type=chat_type,
             user_id=user_id, user_name=user_name)
-        event = MessageEvent(text=f"/{cmd} {page}", message_type=MessageType.TEXT,
+        event = MessageEvent(text=text, message_type=MessageType.TEXT,
                              source=source, message_id=None)
         await self.handle_message(event)
 
@@ -643,10 +655,10 @@ class MaxAdapter(BasePlatformAdapter):
                 chat_id = update.chat_id
                 if chat_id:
                     try:
-                        # _greeting_keyboard() уже список — не оборачиваем повторно
-                        # (двойной массив attachments давал 400 proto.payload)
+                        # callback-кнопки: тихое выполнение команды + тост
                         await self._client.send_message(
-                            int(chat_id), _GREETING, attachments=_greeting_keyboard(),
+                            int(chat_id), _GREETING,
+                            attachments=_greeting_keyboard(chat_id),
                             notify=False)
                         logger.info("max: bot_started chat=%s — приветствие отправлено", chat_id)
                     except Exception as exc:

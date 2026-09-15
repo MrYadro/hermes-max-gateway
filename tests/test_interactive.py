@@ -210,3 +210,16 @@ async def test_model_picker_buttons_and_callback():
     await disp.dispatch(_cb("mp:100:1"))
     assert calls == [("100", "glm-5.2", "zai")]
     assert api.sent["100"][0] == "Модель переключена: glm-5.2"
+
+
+async def test_greeting_button_runs_command_with_toast(monkeypatch):
+    disp, api = make_dispatcher()
+    ran = []
+
+    async def fake_cmd(cb):
+        ran.append(cb.payload)
+
+    monkeypatch.setattr(disp.api, "on_greeting_cmd", fake_cmd, raising=False)
+    await disp.dispatch(_cb("gc:100:new"))
+    assert ran == ["gc:100:new"]
+    assert api.answered and "⏳" in api.answered[0][1]

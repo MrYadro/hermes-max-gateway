@@ -601,3 +601,14 @@ async def test_bot_started_greeting_single_nested_attachments():
     await adapter._handle_update(parse_update(upd))
     atts = adapter._client.sent[0][2]
     assert atts and isinstance(atts[0], dict) and atts[0]["type"] == "inline_keyboard"
+
+
+async def test_bot_started_greeting_callback_buttons():
+    """Кнопки приветствия — callback (тихое выполнение), не message."""
+    adapter = make_adapter()
+    upd = {"update_type": "bot_started", "chat_id": 100, "marker": 1,
+           "user": {"user_id": 42, "name": "Иван"}, "timestamp": 1}
+    await adapter._handle_update(parse_update(upd))
+    btns = adapter._client.sent[0][2][0]["payload"]["buttons"][0]
+    assert all(b["type"] == "callback" for b in btns)
+    assert any(b["payload"] == "gc:100:new" for b in btns)

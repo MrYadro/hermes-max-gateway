@@ -183,6 +183,11 @@ class InteractiveDispatcher:
                 await self._on_model_picker(cb)
             elif payload.startswith("pg:"):
                 await self.api.on_page_nav(cb)
+            elif payload.startswith("gc:"):
+                cmd = payload.split(":")[2] if len(payload.split(":")) > 2 else ""
+                await self._finish(cb, f"⏳ /{cmd}", f"⏳ Выполняю /{cmd}…",
+                                   edit_attachments=None)  # кнопки остаются
+                await self.api.on_greeting_cmd(cb)
         except Exception:
             logger.exception("max: callback %r не обработан", payload)
 
