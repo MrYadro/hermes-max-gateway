@@ -226,6 +226,10 @@ def _greeting_keyboard(chat_id) -> list:
     ]])]
 
 
+# строка tool-прогресса: «⚙️ имя_инструмента: "превью"» (+ опц. аргументы, счётчик ×N)
+_TOOL_LINE_RE = re.compile(r"^\S{1,3} [\w.]+(\([^)]*\))?(: .*)?(\s\(×\d+\))?$")
+
+
 _GREETING = (
     "👋 Привет! Я Hermes-агент в MAX.\n"
     "💬 Напишите вопрос, отправьте фото или файл — я отвечу.\n"
@@ -548,11 +552,19 @@ class MaxAdapter(BasePlatformAdapter):
 
     async def edit_message(self, chat_id: str, message_id: str, content: str,
                            *, finalize: bool = False) -> SendResult:
-        """Правка на месте (heartbeat «⏳ Working…», стриминг) — вместо новых пузырей."""
+        """Правка на месте (heartbeat «⏳ Working…», стриминг) — вместо новых пузырей.
+
+        Прогресс-пузырь схлопываем в катящуюся строку: если весь текст — tool-строки,
+        показываем только последнюю операцию (финал и прозу не трогаем)."""
         if not self._client:
             return SendResult(success=False, error="not connected")
+        text = content
+        if not finalize:
+            lines = [ln for ln in content.splitlines() if ln.strip()]
+            if len(lines) > 1 and all(_TOOL_LINE_RE.match(ln) for ln in lines):
+                text = lines[-1]
         try:
-            ok = await self._client.edit_message(message_id, sanitize_markdown(content))
+            ok = await self._client.edit_message(message_id, sanitize_markdown(text))
         except Exception as exc:
             return SendResult(success=False, error=str(exc))
         return SendResult(success=bool(ok), message_id=message_id if ok else None)

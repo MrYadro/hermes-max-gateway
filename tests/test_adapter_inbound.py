@@ -825,3 +825,21 @@ async def test_edit_message_failure_returns_not_success():
     adapter._client.edit_message = boom
     res = await adapter.edit_message("100", "m1", "x")
     assert not res.success and "boom" in (res.error or "")
+
+
+async def test_edit_message_collapses_tool_progress_to_last_line():
+    """Прогресс-пузырь = катящаяся строка: видно только последнюю операцию."""
+    adapter = make_adapter()
+    prog = '⚙️ browser_exec: "открываю max.ru"\n⚙️ browser_exec: "ищу кнопку"\n⚙️ file_read: "config.yaml"'
+    await adapter.edit_message("100", "m1", prog)
+    assert adapter._client.edits[-1][1] == '⚙️ file_read: "config.yaml"'
+
+
+async def test_edit_message_keeps_prose_and_finalize():
+    """Проза и finalize=True не трогаем — это настоящий контент."""
+    adapter = make_adapter()
+    prose = "Первая строка ответа\n⚙️ file_read: x\nВторая строка"
+    await adapter.edit_message("100", "m1", prose)
+    assert adapter._client.edits[-1][1] == prose
+    await adapter.edit_message("100", "m1", prose, finalize=True)
+    assert adapter._client.edits[-1][1] == prose
