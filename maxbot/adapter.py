@@ -226,8 +226,14 @@ def _greeting_keyboard(chat_id) -> list:
     ]])]
 
 
-# строка tool-прогресса: «⚙️ имя_инструмента: "превью"» (+ опц. аргументы, счётчик ×N)
-_TOOL_LINE_RE = re.compile(r"^\S{1,3} [\w.]+(\([^)]*\))?(: .*)?(\s\(×\d+\))?$")
+# строка tool-прогресса: «⚙️ имя_инструмента: "превью"» — имя в snake_case (+ аргументы, ×N)
+_TOOL_LINE_RE = re.compile(r"^\S{1,3} [a-z_][a-z0-9_.]*(\([^)]*\))?(: .*)?(\s\(×\d+\))?$")
+
+
+def _is_tool_text(text: str) -> bool:
+    """Весь текст — tool-строки (прогресс-пузырь), не проза."""
+    lines = [ln for ln in (text or "").splitlines() if ln.strip()]
+    return bool(lines) and all(_TOOL_LINE_RE.match(ln) for ln in lines)
 
 
 _GREETING = (
@@ -276,6 +282,8 @@ class MaxAdapter(BasePlatformAdapter):
         self._mid_sessions: Dict[str, Tuple[str, str, Any]] = {}  # mid -> (session_key, chat_id, source)
         self._chat_users: Dict[str, Tuple[str, str]] = {}
         self._greeting_mids: Dict[str, str] = {}
+        # служебный пузырь над полем ввода: {"hb": "⏳ Working…", "mid": …, "tool": "⚙️ …"}
+        self._svc_state: Dict[str, Dict[str, Any]] = {}
         # post_id -> chat_id канала (сессия ветки комментариев)
         self._comment_posts: Dict[str, int] = {}  # Task 12: streaming-превью
 
@@ -413,6 +421,14 @@ class MaxAdapter(BasePlatformAdapter):
                    metadata: Optional[Dict[str, Any]] = None) -> SendResult:
         if not self._client:
             return SendResult(success=False, error="not connected")
+        svc = self._svc_state.setdefault(str(chat_id), {})
+        # heartbeat «⏳ Working» не отправляем отдельно — вживляем в служебный пузырь
+        if metadata and metadata.get("_interim_send") and content.startswith("⏳ Working"):
+            svc["hb"] = content.strip()
+            if svc.get("mid") and svc.get("tool"):
+                with contextlib.suppress(Exception):
+                    await self._client.edit_message(svc["mid"], f'{svc["tool"]}\n{svc["hb"]}')
+            return SendResult(success=True, message_id=None)
         await self._cleanup_drafts(chat_id)  # Task 12: удаляем streaming-превью
         last_mid: Optional[str] = None
         # сессия ветки комментариев канала: ответ уходит комментарием к посту
@@ -429,6 +445,13 @@ class MaxAdapter(BasePlatformAdapter):
                     int(chat_id), chunk, reply_to_mid=reply_to)
         except MaxApiError as exc:
             return SendResult(success=False, error=str(exc))
+        # прогресс-пузырь: всегда один и внизу — старый удаляем, запоминаем новый
+        if last_mid and _is_tool_text(content):
+            old_mid = svc.get("mid")
+            svc.update(mid=last_mid, tool=None)
+            if old_mid and old_mid != last_mid:
+                with contextlib.suppress(Exception):
+                    await self._client.delete_message(old_mid)
         # текстовая навигация ядра («/commands 2») — дублируем кнопками-страницами
         if self._interactive and _PAGE_NAV_RE.search(content):
             cmd = _PAGE_NAV_RE.search(content).group(1)
@@ -546,9 +569,14 @@ class MaxAdapter(BasePlatformAdapter):
 
     async def delete_message(self, chat_id: str, message_id: str) -> bool:
         try:
-            return await self._client.delete_message(message_id)
+            ok = await self._client.delete_message(message_id)
         except Exception:
             return False
+        # служебный пузырь удалён (конец прогона) — сбрасываем состояние чата
+        svc = self._svc_state.get(str(chat_id))
+        if ok and svc and svc.get("mid") == message_id:
+            svc.clear()
+        return ok
 
     async def edit_message(self, chat_id: str, message_id: str, content: str,
                            *, finalize: bool = False) -> SendResult:
@@ -559,10 +587,14 @@ class MaxAdapter(BasePlatformAdapter):
         if not self._client:
             return SendResult(success=False, error="not connected")
         text = content
+        svc = self._svc_state.setdefault(str(chat_id), {})
         if not finalize:
             lines = [ln for ln in content.splitlines() if ln.strip()]
-            if len(lines) > 1 and all(_TOOL_LINE_RE.match(ln) for ln in lines):
-                text = lines[-1]
+            if _is_tool_text(content):
+                text = lines[-1]  # катящаяся строка: только последняя операция
+                svc.update(mid=message_id, tool=text)
+                if svc.get("hb"):
+                    text = f'{text}\n{svc["hb"]}'  # Working — строкой ниже, над полем ввода
         try:
             ok = await self._client.edit_message(message_id, sanitize_markdown(text))
         except Exception as exc:

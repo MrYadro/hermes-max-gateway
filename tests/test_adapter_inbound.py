@@ -18,6 +18,7 @@ class FakeClient:
         self._mid = 0
         self.replied_lookup = {}
         self.edits = []
+        self.deleted = []
 
     async def send_message(self, chat_id, text, **kw):
         self._mid += 1
@@ -30,6 +31,10 @@ class FakeClient:
     async def edit_message(self, message_id, text, **kw):
         self.edits = getattr(self, "edits", [])
         self.edits.append((message_id, text, kw.get("attachments")))
+        return True
+
+    async def delete_message(self, message_id):
+        self.deleted.append(message_id)
         return True
 
 
@@ -843,3 +848,33 @@ async def test_edit_message_keeps_prose_and_finalize():
     assert adapter._client.edits[-1][1] == prose
     await adapter.edit_message("100", "m1", prose, finalize=True)
     assert adapter._client.edits[-1][1] == prose
+
+
+async def test_service_bubble_single_rolling_above_input():
+    """Один служебный пузырь над полем ввода: операция сверху, Working снизу,
+    предыдущие пузыри удаляются."""
+    adapter = make_adapter()
+
+    # Working не отправляется отдельным сообщением — вживляется в служебный пузырь
+    res = await adapter.send("100", "⏳ Working — 9 min", metadata={"_interim_send": True})
+    assert res.success and res.message_id is None
+    assert adapter._client.sent == []  # ничего не ушло в чат
+
+    # первый прогресс-пузырь — обычная отправка
+    res = await adapter.send("100", '⚙️ browser_exec: "открываю max.ru"')
+    first = res.message_id
+    assert first
+
+    # правка: последняя операция сверху + Working снизу
+    await adapter.edit_message("100", first, '⚙️ browser_exec: "a"\n⚙️ file_read: "config.yaml"')
+    assert adapter._client.edits[-1][1] == '⚙️ file_read: "config.yaml"\n⏳ Working — 9 min'
+
+    # heartbeat обновился — пузырь отредактирован без новой отправки
+    await adapter.send("100", "⏳ Working — 12 min", metadata={"_interim_send": True})
+    assert len(adapter._client.sent) == 1
+    assert "12 min" in adapter._client.edits[-1][1]
+
+    # новый сегмент: свежий пузырь, старый удалён — всегда один и внизу
+    res = await adapter.send("100", '⚙️ browser_exec: "ещё раз"')
+    assert res.message_id != first
+    assert first in adapter._client.deleted
