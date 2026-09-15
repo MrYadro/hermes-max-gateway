@@ -955,3 +955,17 @@ async def test_emoji_prose_is_not_progress():
     svc_mid = adapter._svc_state["100"]["mid"]
     await adapter.edit_message("100", svc_mid, "✅ Готово\nВторая строка")
     assert adapter._client.edits[-1][1] == "✅ Готово\nВторая строка"
+
+
+async def test_draft_landing_marks_bubble_stale():
+    """Стриминг-черновик приземлился ниже пузыря → следующая правка пересоздаёт пузырь."""
+    adapter = make_adapter()
+    res = await adapter.send("100", '⚙️ browser_exec: "x"')
+    m1 = res.message_id
+
+    await adapter.send_draft("100", 1, "Черновик ответа, стримится…")
+
+    res = await adapter.edit_message("100", m1, '💻 Running python3 -c "print(1)"')
+    assert res.success
+    assert m1 in adapter._client.deleted
+    assert adapter._client.sent[-1][1].endswith('print(1)"')  # новый пузырь ниже черновика

@@ -556,6 +556,9 @@ class MaxAdapter(BasePlatformAdapter):
                 return SendResult(success=False, error=str(exc))
             # «last» в прошлом: первая правка идёт сразу, троттлер меряет интервал между PUT
             self._drafts[key] = {"message_id": mid, "last": now - _DRAFT_MIN_INTERVAL}
+            svc = self._svc_state.setdefault(str(chat_id), {})
+            if svc.get("mid"):
+                svc["stale"] = True  # черновик приземлился ниже служебного пузыря
             return SendResult(success=True, message_id=None)
         if now - entry["last"] < _DRAFT_MIN_INTERVAL:
             return SendResult(success=True, message_id=None)  # скип промежуточного чанка
