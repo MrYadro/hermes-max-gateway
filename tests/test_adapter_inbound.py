@@ -412,3 +412,60 @@ async def test_video_frames_extracted_for_vision(monkeypatch):
     assert paths == ["/tmp/v.mp4", "/tmp/frame_1.jpg", "/tmp/frame_2.jpg", "/tmp/frame_3.jpg"]
     assert types == ["video/mp4", "image/jpeg", "image/jpeg", "image/jpeg"]
     assert cached == [(b"J1", ".jpg"), (b"J2", ".jpg"), (b"J3", ".jpg")]
+
+
+def test_inline_text_helper(tmp_path):
+    from maxbot.adapter import _inline_text
+    md = tmp_path / "note.md"
+    md.write_text("# Заголовок\n\nТекст заметки", encoding="utf-8")
+    inline = _inline_text(str(md))
+    assert "Заголовок" in inline and "Текст заметки" in inline
+
+    binary = tmp_path / "blob.bin"
+    binary.write_bytes(b"\x00\x01\x02PNG")
+    assert _inline_text(str(binary)) is None
+
+    big = tmp_path / "big.txt"
+    big.write_text("x" * 200_000, encoding="utf-8")
+    assert _inline_text(str(big)) is None  # слишком большой — агенту путь, не текст
+
+
+async def test_file_attachment_text_inlined(monkeypatch):
+    from maxbot.adapter import MaxAdapter
+    from maxbot.models import Attachment, Message, MessageBody
+
+    class FakeCfg:
+        extra = {}
+
+    adapter = MaxAdapter(FakeCfg(), client=None, transport=None)
+    msg = Message(body=MessageBody(attachments=[
+        Attachment(type="file", payload={"filename": "note.md"})]),
+        chat_id=1, chat_type="dialog")
+
+    async def fake_refresh(m):
+        return m.body.attachments
+
+    async def fake_dl(att, cache_fn, default_ext, mime_map=None, is_doc=False, url=None):
+        f = "/tmp/fake_note.md"
+        open(f, "w").write("# План\nСделать всё")
+        return f
+
+    monkeypatch.setattr(adapter, "_refreshed_attachments", fake_refresh)
+    monkeypatch.setattr(adapter, "_download_cached", fake_dl)
+    paths, types, texts = await adapter._collect_media(msg)
+    assert paths and "текст файла" in texts and "План" in texts
+
+
+async def test_inbound_message_marks_seen(monkeypatch):
+    """Входящее сообщение помечается 'прочитано' (mark_seen) fire-and-forget."""
+    actions = []
+
+    adapter = make_adapter()
+
+    async def fake_action(chat_id, action):
+        actions.append((chat_id, action))
+
+    monkeypatch.setattr(adapter._client, "chat_action", fake_action, raising=False)
+    await adapter._handle_update(_upd_message())
+    await asyncio.sleep(0.05)
+    assert (100, "mark_seen") in actions

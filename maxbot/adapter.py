@@ -127,6 +127,25 @@ def _lowest_video_url(info: Optional[dict]) -> Optional[str]:
     return None
 
 
+def _inline_text(path: str, limit: int = 3900) -> Optional[str]:
+    """Текстовое вложение (.md/.txt/…) — контент прямо в сообщение агента,
+    без инструментных ходов. Бинарное/большое → None (агенту останется путь)."""
+    try:
+        data = open(path, "rb").read(65537)
+    except OSError:
+        return None
+    if len(data) > 65536 or b"\x00" in data:
+        return None
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if not text.strip():
+        return None
+    body = text if len(text) <= limit else text[:limit] + "\n…[обрезано]"
+    return f"[текст файла {os.path.basename(path)!r}]:\n{body}"
+
+
 def _extract_frames(video_path: str, count: int = 4) -> list:
     """Равномерные кадры видео через ffmpeg — «смотреть» видео без видеоподдержки модели.
 
@@ -594,6 +613,10 @@ class MaxAdapter(BasePlatformAdapter):
     async def _handle_update(self, update) -> None:
         try:
             if update.update_type == "message_created" and update.message:
+                # помечаем прочитанным сразу (fire-and-forget; DM может не поддерживать)
+                with contextlib.suppress(Exception):
+                    await self._client.chat_action(
+                        int(update.message.chat_id), "mark_seen")
                 await self._on_message(update.message)
             elif update.update_type == "message_callback" and update.callback:
                 logger.info("max: message_callback raw=%s", str(update.callback.raw)[:400])
@@ -727,6 +750,8 @@ class MaxAdapter(BasePlatformAdapter):
                         paths.append(path)
                         types.append(_mime_for(path, "video/mp4") if att.type == "video"
                                      else "application/octet-stream")
+                        if att.type == "file" and (inline := _inline_text(path)):
+                            texts.append(inline)
                     if path and att.type == "video":
                         # кадры из видео — мидлграунд: понимание содержимого без видеоподдержки
                         with contextlib.suppress(Exception):
