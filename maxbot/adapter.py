@@ -449,10 +449,13 @@ class MaxAdapter(BasePlatformAdapter):
         tool_line = _last_tool_line(content) if last_mid else None
         if tool_line:
             old_mid = svc.get("mid")
-            svc.update(mid=last_mid, tool=tool_line)
+            svc.update(mid=last_mid, machinery_mid=last_mid, tool=tool_line, stale=False)
             if old_mid and old_mid != last_mid:
                 with contextlib.suppress(Exception):
                     await self._client.delete_message(old_mid)
+                logger.info("max: служебный пузырь %s → %s (старый удалён)", old_mid, last_mid)
+        elif last_mid and svc.get("mid"):
+            svc["stale"] = True  # контент приземлился ниже пузыря
         # текстовая навигация ядра («/commands 2») — дублируем кнопками-страницами
         if self._interactive and _PAGE_NAV_RE.search(content):
             cmd = _PAGE_NAV_RE.search(content).group(1)
@@ -572,10 +575,14 @@ class MaxAdapter(BasePlatformAdapter):
         try:
             ok = await self._client.delete_message(message_id)
         except Exception:
-            return False
-        # служебный пузырь удалён (конец прогона) — сбрасываем состояние чата
+            ok = False
+        # cleanup служебного пузыря: удаляем и живой mid, состояние чистим
         svc = self._svc_state.get(str(chat_id))
-        if ok and svc and svc.get("mid") == message_id:
+        if svc and message_id in {svc.get("mid"), svc.get("machinery_mid")}:
+            live = svc.get("mid")
+            if live and live != message_id:
+                with contextlib.suppress(Exception):
+                    await self._client.delete_message(live)
             svc.clear()
         return ok
 
@@ -589,18 +596,32 @@ class MaxAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="not connected")
         text = content
         svc = self._svc_state.setdefault(str(chat_id), {})
+        real_mid = message_id
         if not finalize:
             tool_line = _last_tool_line(content)
             if tool_line:
-                text = tool_line  # катящаяся строка: только последняя операция
-                svc.update(mid=message_id, tool=tool_line)
-                if svc.get("hb"):
-                    text = f'{tool_line}\n{svc["hb"]}'  # Working — строкой ниже
+                compose = f'{tool_line}\n{svc["hb"]}' if svc.get("hb") else tool_line
+                if svc.get("stale") and svc.get("mid"):
+                    # контент ниже пузыря — пересоздаём внизу, старый удаляем
+                    old = svc["mid"]
+                    try:
+                        new_mid = await self._client.send_message(
+                            int(chat_id), sanitize_markdown(compose))
+                    except Exception as exc:
+                        return SendResult(success=False, error=str(exc))
+                    with contextlib.suppress(Exception):
+                        await self._client.delete_message(old)
+                    svc.update(mid=new_mid, tool=tool_line, stale=False)
+                    logger.info("max: служебный пузырь пересоздан внизу %s → %s", old, new_mid)
+                    return SendResult(success=True, message_id=message_id)
+                real_mid = svc.get("mid") or message_id
+                svc.update(mid=real_mid, tool=tool_line)
+                text = compose  # катящаяся строка + Working строкой ниже
         try:
-            ok = await self._client.edit_message(message_id, sanitize_markdown(text))
+            ok = await self._client.edit_message(real_mid, sanitize_markdown(text))
         except Exception as exc:
             return SendResult(success=False, error=str(exc))
-        return SendResult(success=bool(ok), message_id=message_id if ok else None)
+        return SendResult(success=bool(ok), message_id=real_mid if ok else None)
 
     async def _send_attachment(self, chat_id: str, path: str, kind: str,
                                caption: Optional[str]) -> SendResult:

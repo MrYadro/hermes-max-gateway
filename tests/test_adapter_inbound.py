@@ -894,3 +894,38 @@ async def test_service_bubble_survives_foreign_lines():
     # новый сегмент с посторонней строкой — старый пузырь всё равно удалён
     res = await adapter.send("100", '⚠️ Command Approval Required\n⚙️ browser_exec: "ещё"')
     assert first in adapter._client.deleted
+
+
+async def test_progress_bubble_repositions_below_content():
+    """Контент ниже пузыря → следующая правка пересоздаёт пузырь внизу, старый удалён."""
+    adapter = make_adapter()
+    res = await adapter.send("100", '⚙️ browser_exec: "первый"')
+    m1 = res.message_id
+
+    # промежуточный текст ответа приземлился ниже
+    await adapter.send("100", "Вот что я нашёл:\nпроза ответа")
+
+    # ядро правит СВОЙ mid (m1) — мы пересоздаём пузырь и удаляем старый
+    res = await adapter.edit_message("100", m1, '⚙️ browser_exec: "a"\n⚙️ file_read: "b"')
+    assert res.success
+    assert m1 in adapter._client.deleted
+    sent_texts = [t for _, t, _ in adapter._client.sent]
+    assert '⚙️ file_read: "b"' in sent_texts  # свежий пузырь внизу
+
+    # последующие правки ядра по старому m1 попадают в живой пузырь
+    await adapter.edit_message("100", m1, '⚙️ file_read: "c"')
+    assert adapter._client.edits[-1][1] == '⚙️ file_read: "c"'
+
+    # cleanup ядра удаляет m1 → живой пузырь тоже удаляется, состояние чисто
+    await adapter.delete_message("100", m1)
+    assert adapter._svc_state["100"] == {}
+    assert set(adapter._client.deleted) >= {m1}
+
+
+async def test_unrelated_delete_keeps_service_state():
+    adapter = make_adapter()
+    await adapter.send("100", '⚙️ browser_exec: "x"')
+    svc = adapter._svc_state["100"]
+    mid = svc["mid"]
+    await adapter.delete_message("100", "mid.other")  # ретракция чужого сообщения
+    assert adapter._svc_state["100"]["mid"] == mid
