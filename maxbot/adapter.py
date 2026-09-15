@@ -440,6 +440,10 @@ class MaxAdapter(BasePlatformAdapter):
                     await self._client.edit_message(svc["mid"], f'{svc["tool"]}\n{svc["hb"]}')
             return SendResult(success=True, message_id=None)
         await self._cleanup_drafts(chat_id)  # Task 12: удаляем streaming-превью
+        # новый прогресс-пузырь рождается сразу с Working-строкой, не ждёт правки
+        tool_line = _last_tool_line(content)
+        if svc.get("hb") and tool_line:
+            content = f'{tool_line}\n{svc["hb"]}'
         last_mid: Optional[str] = None
         # сессия ветки комментариев канала: ответ уходит комментарием к посту
         if str(chat_id) in self._comment_posts:
@@ -456,8 +460,7 @@ class MaxAdapter(BasePlatformAdapter):
         except MaxApiError as exc:
             return SendResult(success=False, error=str(exc))
         # прогресс-пузырь: всегда один и внизу — старый удаляем, запоминаем новый
-        tool_line = _last_tool_line(content) if last_mid else None
-        if tool_line:
+        if tool_line and last_mid:
             old_mid = svc.get("mid")
             svc.update(mid=last_mid, machinery_mid=last_mid, tool=tool_line, stale=False)
             logger.info("max: служебный пузырь создан %s: %s", last_mid, tool_line[:60])

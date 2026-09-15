@@ -969,3 +969,11 @@ async def test_draft_landing_marks_bubble_stale():
     assert res.success
     assert m1 in adapter._client.deleted
     assert adapter._client.sent[-1][1].endswith('print(1)"')  # новый пузырь ниже черновика
+
+
+async def test_progress_send_born_with_working_line():
+    """Новый пузырь рождается сразу с Working-строкой, не ждёт следующей правки."""
+    adapter = make_adapter()
+    await adapter.send("100", "⏳ Working — 9 min", metadata={"_interim_send": True})
+    await adapter.send("100", '⚙️ browser_exec: "a"\n⚙️ file_read: "b"')
+    assert adapter._client.sent[-1][1] == '⚙️ file_read: "b"\n⏳ Working — 9 min'
