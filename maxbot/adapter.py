@@ -643,8 +643,10 @@ class MaxAdapter(BasePlatformAdapter):
                 chat_id = update.chat_id
                 if chat_id:
                     try:
+                        # _greeting_keyboard() уже список — не оборачиваем повторно
+                        # (двойной массив attachments давал 400 proto.payload)
                         await self._client.send_message(
-                            int(chat_id), _GREETING, attachments=[_greeting_keyboard()],
+                            int(chat_id), _GREETING, attachments=_greeting_keyboard(),
                             notify=False)
                         logger.info("max: bot_started chat=%s — приветствие отправлено", chat_id)
                     except Exception as exc:

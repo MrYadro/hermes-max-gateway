@@ -20,7 +20,7 @@ class FakeClient:
 
     async def send_message(self, chat_id, text, **kw):
         self._mid += 1
-        self.sent.append((chat_id, text))
+        self.sent.append((chat_id, text, kw.get("attachments")))
         return f"mid.{self._mid}"
 
     async def get_message(self, message_id):
@@ -591,3 +591,13 @@ async def test_message_removed_sends_retraction_note():
     await asyncio.sleep(0.05)
     assert notes and notes[0].internal is True
     assert "удалил" in notes[0].text and "gateway_session_key" in notes[0].metadata
+
+
+async def test_bot_started_greeting_single_nested_attachments():
+    """attachments должен быть [att], а не [[att]] — двойной массив даёт 400."""
+    adapter = make_adapter()
+    upd = {"update_type": "bot_started", "chat_id": 100, "marker": 1,
+           "user": {"user_id": 42, "name": "Иван"}, "timestamp": 1}
+    await adapter._handle_update(parse_update(upd))
+    atts = adapter._client.sent[0][2]
+    assert atts and isinstance(atts[0], dict) and atts[0]["type"] == "inline_keyboard"
