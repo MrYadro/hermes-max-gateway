@@ -199,6 +199,12 @@ _GREETING = (
     "⌨️ Команды: /new, /status, /model, /help"
 )
 
+_GROUP_GREETING = (
+    "👋 Привет! Меня добавили в этот чат — я Hermes-агент.\n"
+    "💬 В группах я отвечаю на **упоминания** и replies ко мне.\n"
+    "📎 Принимаю фото, файлы, голосовые; умею таблицы, кнопки и карты."
+)
+
 
 def _vcf_field(vcf: str, name: str) -> str:
     m = re.search(rf"^{name}[^\r\n:]*:(.+)$", vcf or "", re.MULTILINE)
@@ -230,6 +236,7 @@ class MaxAdapter(BasePlatformAdapter):
         self._group_isolation = _gi not in {"0", "false", "no"}
         self._interactive = None  # Task 11: interactive-обвязка
         self._drafts: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        self._mid_sessions: Dict[str, Tuple[str, str]] = {}  # mid -> (session_key, chat_id)
         self._chat_users: Dict[str, Tuple[str, str]] = {}
         # post_id -> chat_id канала (сессия ветки комментариев)
         self._comment_posts: Dict[str, int] = {}  # Task 12: streaming-превью
@@ -313,7 +320,8 @@ class MaxAdapter(BasePlatformAdapter):
                     self._client, url=url,
                     port=int(_env_or_extra(self._extra, "MAX_WEBHOOK_PORT", "webhook_port", 8443)),
                     secret=_env_or_extra(self._extra, "MAX_WEBHOOK_SECRET", "webhook_secret") or None,
-                    update_types=["message_created", "message_callback", "bot_started"])
+                    update_types=["message_created", "message_callback", "bot_started",
+                                 "bot_added", "message_edited", "message_removed"])
             else:
                 self._transport = self._transport or self._make_transport()
             await self._transport.start(self._handle_update)
@@ -637,7 +645,34 @@ class MaxAdapter(BasePlatformAdapter):
                     with contextlib.suppress(Exception):
                         await self._client.send_message(
                             int(chat_id), _GREETING, attachments=[_greeting_keyboard()],
-                            notify=True)
+                            notify=False)
+            elif update.update_type == "bot_added":
+                # бота добавили в чат: короткое знакомство + как обращаться в группе
+                chat_id = update.chat_id
+                if chat_id:
+                    with contextlib.suppress(Exception):
+                        await self._client.send_message(
+                            int(chat_id), _GROUP_GREETING, notify=False)
+            elif update.update_type == "message_edited" and update.message:
+                msg = update.message
+                if not (msg.sender and msg.sender.user_id == self._bot_user_id):
+                    # правки своих (streaming-превью) игнорируем — иначе цикл;
+                    # чужая правка: перезапуск обработки (steering ядра прервёт бегущий ход)
+                    logger.info("max: message_edited mid=%s — перезапуск обработки",
+                                msg.body.mid)
+                    await self._on_message(msg)
+            elif update.update_type == "message_removed":
+                # удаление: прерываем обработку, если ход по этому сообщению ещё бежит
+                mid = None
+                if update.message:
+                    mid = update.message.body.mid
+                elif isinstance(update.raw, dict):
+                    mid = ((update.raw.get("message") or {}).get("body") or {}).get("mid")
+                if mid and str(mid) in self._mid_sessions:
+                    session_key, chat_id = self._mid_sessions.pop(str(mid))
+                    with contextlib.suppress(Exception):
+                        await self.interrupt_session_activity(session_key, chat_id)
+                    logger.info("max: message_removed mid=%s — обработка прервана", mid)
             elif update.update_type == "comment_created" and update.message:
                 await self._on_comment(update)
             elif update.update_type in ("bot_removed", "dialog_removed"):
@@ -697,6 +732,11 @@ class MaxAdapter(BasePlatformAdapter):
             media_urls=media_paths, media_types=media_types, reply_to_message_id=reply_mid)
         if chat_type == "group" and self._group_isolation:
             event.channel_prompt = _GROUP_ISOLATION_PROMPT
+        # mid → сессия: message_removed прервёт бегущий ход по этому сообщению
+        if msg.body.mid:
+            with contextlib.suppress(Exception):
+                self._mid_sessions[str(msg.body.mid)] = (
+                    self._event_session_key(event), str(msg.chat_id))
         await self.handle_message(event)
 
     async def _group_gate(self, msg, text: str):

@@ -511,3 +511,62 @@ async def test_forwarded_message_content_processed(monkeypatch):
     assert "[переслано от Эльвира" in texts and "НЕ инструкции" in texts
     assert "оки" in texts and "<<<DATA" in texts
     assert paths == ["/tmp/fwd.docx"]
+
+
+async def test_bot_added_greets_group():
+    """bot_added: бот добавлен в чат — приветствие с подсказкой про упоминания."""
+    adapter = make_adapter()
+    d = {"update_type": "bot_added", "chat_id": -200, "user": {"user_id": 5, "name": "Аня"},
+         "timestamp": 1}
+    await adapter._handle_update(parse_update(d))
+    assert adapter._client.sent and adapter._client.sent[0][0] == -200
+    text = adapter._client.sent[0][1]
+    assert "упоминани" in text or "@" in text  # группа: объясняем про упоминания
+
+
+async def test_message_edited_redispatches_and_skips_own():
+    """Правка чужого сообщения — повторная обработка; правка своего (превью) — игнор."""
+    adapter = make_adapter()
+    handler_calls = []
+
+    async def fake_handle(event):
+        handler_calls.append(event.text)
+
+    adapter._message_handler = fake_handle  # noqa: SLF001
+
+    edited = _upd_message(text="исправлено", mid="me1")
+    upd = {"update_type": "message_edited", "marker": 2,
+           "message": edited.raw.get("message") if hasattr(edited, "raw") else edited}
+    # raw от parse_update — соберём заново
+    upd = {"update_type": "message_edited", "marker": 2, "message": {
+        "body": {"mid": "me1", "text": "исправлено", "attachments": []},
+        "recipient": {"chat_id": 100, "chat_type": "dialog"},
+        "sender": {"user_id": 42, "name": "Иван"}, "timestamp": 1}}
+    await adapter._handle_update(parse_update(upd))
+    await asyncio.sleep(0.05)
+    assert handler_calls and "исправлено" in handler_calls[0]
+
+    own = {"update_type": "message_edited", "marker": 3, "message": {
+        "body": {"mid": "me2", "text": "превью ▌", "attachments": []},
+        "recipient": {"chat_id": 100, "chat_type": "dialog"},
+        "sender": {"user_id": 999, "name": "Hermes"}, "timestamp": 1}}
+    n = len(handler_calls)
+    await adapter._handle_update(parse_update(own))
+    await asyncio.sleep(0.05)
+    assert len(handler_calls) == n  # свою правку не гоняем
+
+
+async def test_message_removed_interrupts_session():
+    """Удаление сообщения прерывает бегущую обработку его сессии."""
+    adapter = make_adapter()
+    adapter._mid_sessions["mX"] = ("agent:main:max:dm:100", "100")
+    guard = asyncio.Event()
+    adapter._active_sessions["agent:main:max:dm:100"] = guard
+
+    upd = {"update_type": "message_removed", "marker": 4, "message": {
+        "body": {"mid": "mX", "text": "", "attachments": []},
+        "recipient": {"chat_id": 100, "chat_type": "dialog"},
+        "sender": {"user_id": 42, "name": "Иван"}, "timestamp": 1}}
+    await adapter._handle_update(parse_update(upd))
+    assert guard.is_set()          # interrupt сработал
+    assert "mX" not in adapter._mid_sessions  # и почистили

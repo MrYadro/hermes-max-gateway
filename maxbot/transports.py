@@ -110,7 +110,8 @@ class WebhookTransport:
         self._port = port
         self._secret = secret
         self._path = path
-        self._types = update_types or ["message_created", "message_callback", "bot_started"]
+        self._types = update_types or ["message_created", "message_callback", "bot_started",
+                                       "bot_added", "message_edited", "message_removed"]
         self._runner = None
         self._app = None
         self._on_update: Optional[OnUpdate] = None
