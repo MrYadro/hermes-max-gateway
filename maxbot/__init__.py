@@ -38,8 +38,8 @@ def register(ctx):
             "You are chatting via MAX messenger (max.ru). MAX renders Markdown "
             "(bold, italic, strikethrough, underline, code, links, quotes), supports "
             "inline buttons, media attachments and streaming message previews. "
-            "The audience is predominantly Russian-speaking — reply in Russian "
-            "when the user writes in Russian."),
+            "The audience is Russian-speaking — ALWAYS reply in Russian, including "
+            "image/video analysis, tool results summaries and short answers."),
         setup_fn=interactive_setup,
         env_enablement_fn=_env_enablement,
         apply_yaml_config_fn=_apply_yaml_config,
