@@ -412,18 +412,31 @@ class MaxAdapter(BasePlatformAdapter):
         if len(parts) != 4:
             return
         _, chat_id, cmd, page = parts
-        await self._run_synthetic_command(chat_id, f"/{cmd} {page}")
+        await self._run_synthetic_command(chat_id, f"/{cmd} {page}", user=cb.user)
 
     async def on_greeting_cmd(self, cb) -> None:
         """Кнопка приветствия (payload gc:<chat_id>:<cmd>): тихо выполняем команду."""
         parts = cb.payload.split(":")
         if len(parts) != 3:
+            logger.warning("max: gc: неожиданный payload %r", cb.payload)
             return
         _, chat_id, cmd = parts
-        await self._run_synthetic_command(chat_id, f"/{cmd}")
+        logger.info("max: gc: кнопка /%s для chat=%s — синтезирую команду", cmd, chat_id)
+        try:
+            await self._run_synthetic_command(chat_id, f"/{cmd}", user=cb.user)
+            logger.info("max: gc: /%s отправлен в handle_message", cmd)
+        except Exception:
+            logger.exception("max: gc: /%s не выполнен", cmd)
 
-    async def _run_synthetic_command(self, chat_id: str, text: str) -> None:
-        user_id, user_name = self._chat_users.get(str(chat_id), ("", ""))
+    async def _run_synthetic_command(self, chat_id: str, text: str, *, user=None) -> None:
+        # Личность — из колбэка (ядро молча роняет события с пустым user_id
+        # в авторизации), кэш чата — запасной вариант.
+        user_id = str(user.user_id) if user and getattr(user, "user_id", None) else ""
+        user_name = (user.name if user and getattr(user, "name", None) else "") or ""
+        if not user_id:
+            user_id, user_name = self._chat_users.get(str(chat_id), ("", ""))
+        if user_id:
+            self._chat_users[str(chat_id)] = (user_id, user_name)
         chat_type = "dm" if str(chat_id).isdigit() else "group"
         source = self.build_source(
             chat_id=str(chat_id), chat_name=str(chat_id), chat_type=chat_type,

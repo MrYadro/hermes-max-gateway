@@ -612,3 +612,20 @@ async def test_bot_started_greeting_callback_buttons():
     btns = adapter._client.sent[0][2][0]["payload"]["buttons"][0]
     assert all(b["type"] == "callback" for b in btns)
     assert any(b["payload"] == "gc:100:new" for b in btns)
+
+
+async def test_synthetic_command_uses_callback_user():
+    """user_id из колбэка: ядро молча роняет синтетику с пустым user_id."""
+    from maxbot.models import Callback, User
+    adapter = make_adapter()
+    cb = Callback(callback_id="cb1", payload="gc:100:new",
+                  user=User(user_id=42, name="Иван"))
+    seen = {}
+
+    async def fake_handle(event):
+        seen["user_id"] = event.source.user_id
+
+    adapter.handle_message = fake_handle
+    await adapter.on_greeting_cmd(cb)
+    assert seen["user_id"] == "42"
+    assert adapter._chat_users["100"] == ("42", "Иван")

@@ -212,7 +212,8 @@ async def test_model_picker_buttons_and_callback():
     assert api.sent["100"][0] == "Модель переключена: glm-5.2"
 
 
-async def test_greeting_button_runs_command_with_toast(monkeypatch):
+async def test_greeting_button_runs_command_without_toast(monkeypatch):
+    """MAX /answers перезаписывает текст сообщения — для gc: ни тоста, ни правки."""
     disp, api = make_dispatcher()
     ran = []
 
@@ -222,4 +223,5 @@ async def test_greeting_button_runs_command_with_toast(monkeypatch):
     monkeypatch.setattr(disp.api, "on_greeting_cmd", fake_cmd, raising=False)
     await disp.dispatch(_cb("gc:100:new"))
     assert ran == ["gc:100:new"]
-    assert api.answered and "⏳" in api.answered[0][1]
+    assert not api.answered          # тоста нет
+    assert not api.edited            # приветствие не редактируем

@@ -184,9 +184,8 @@ class InteractiveDispatcher:
             elif payload.startswith("pg:"):
                 await self.api.on_page_nav(cb)
             elif payload.startswith("gc:"):
-                cmd = payload.split(":")[2] if len(payload.split(":")) > 2 else ""
-                await self._finish(cb, f"⏳ /{cmd}", f"⏳ Выполняю /{cmd}…",
-                                   edit_attachments=None)  # кнопки остаются
+                # MAX не умеет попап-тосты: /answers перезаписывает текст сообщения
+                # с кнопкой. Отклик кнопки — сам ответ команды, клавиатуру не трогаем.
                 await self.api.on_greeting_cmd(cb)
         except Exception:
             logger.exception("max: callback %r не обработан", payload)
@@ -201,13 +200,17 @@ class InteractiveDispatcher:
         (отсутствие поля = «без изменений»). Передай ``None``, чтобы оставить
         клавиатуру (например, «Другое»).
         """
-        with contextlib.suppress(Exception):
+        try:
             await self.api.api_answer(cb.callback_id, toast)
+        except Exception as e:
+            logger.warning("max: тост не ушёл (%s): %s", toast, str(e)[:120])
         target = mid or (cb.message.body.mid if cb.message and cb.message.body else None)
         if target:
-            with contextlib.suppress(Exception):
+            try:
                 await self.api.api_edit(target, edit_text,
                                         list(edit_attachments) if edit_attachments is not None else None)
+            except Exception:
+                logger.warning("max: правка клавиатуры не удалась: mid=%s", target)
 
     async def _on_exec_approval(self, cb: Callback) -> None:
         parts = (cb.payload.split(":") + ["", "", "", ""])[:4]

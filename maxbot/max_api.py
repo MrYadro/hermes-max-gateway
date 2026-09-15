@@ -164,11 +164,14 @@ class MaxClient:
         return bool(resp.get("success", True))
 
     async def answer_callback(self, callback_id: str, text: Optional[str] = None) -> bool:
-        body: Dict[str, Any] = {"callback_id": callback_id}
+        # callback_id — query-параметр (в теле даёт 400 proto.payload)
+        params = {"callback_id": callback_id}
+        if self.disable_link_preview:
+            params["disable_link_preview"] = "true"
+        body: Dict[str, Any] = {}
         if text:
             body["message"] = {"text": text}
-        params = {"disable_link_preview": "true"} if self.disable_link_preview else None
-        resp = await self._request("POST", "/answers", params=params, json_body=body)
+        resp = await self._request("POST", "/answers", params=params, json_body=body or None)
         return bool(resp.get("success", True))
 
     async def chat_action(self, chat_id: int, action: str = "typing_on") -> bool:
