@@ -13,6 +13,7 @@ class FakeAdapterApi:
         self.sent = {}       # chat_id -> последняя (text, attachments)
         self.answered = []
         self.edited = {}
+        self.edit_log = []   # все правки по порядку
         self._mid = 0
 
     async def api_send(self, chat_id, text, attachments=None):
@@ -25,6 +26,7 @@ class FakeAdapterApi:
 
     async def api_edit(self, message_id, text, attachments=None):
         self.edited[message_id] = (text, attachments)
+        self.edit_log.append((message_id, text, attachments))
 
 
 def make_dispatcher():
@@ -227,23 +229,35 @@ async def test_greeting_button_runs_command_without_toast(monkeypatch):
     assert not api.edited            # приветствие не редактируем
 
 
-async def test_slash_confirm_flashes_progress():
-    """Пока команда выполняется — на сообщении «⏳ Выполняю…», потом финальная метка."""
+async def test_slash_confirm_no_flash_on_fast_op(monkeypatch):
+    """Быстрая команда — сразу финальная метка, без «⏳»-мигания."""
     import maxbot.interactive as I
 
-    disp, api = make_dispatcher()
-    calls = []
-
-    async def slow_resolve(session_key, confirm_id, choice):
-        calls.append(api.edited.get("mid.1"))
+    async def fast_resolve(session_key, confirm_id, choice):
         return "готово"
 
-    orig = I._resolve_slash_confirm
-    I._resolve_slash_confirm = slow_resolve
-    try:
-        disp.slash_state["7"] = {"session_key": "s", "mid": "mid.1"}
-        await disp.dispatch(_cb("sc:100:once:7"))
-    finally:
-        I._resolve_slash_confirm = orig
-    assert calls == [("⏳ Выполняю…", None)]      # во время выполнения — мигание
-    assert api.edited["mid.1"][0].startswith("✅")  # после — финал, кнопки сняты
+    monkeypatch.setattr(I, "_resolve_slash_confirm", fast_resolve)
+    disp, api = make_dispatcher()
+    disp.slash_state["7"] = {"session_key": "s", "mid": "mid.1"}
+    await disp.dispatch(_cb("sc:100:once:7"))
+    assert api.edited["mid.1"][0].startswith("✅")
+
+
+async def test_slash_confirm_flashes_slow_op(monkeypatch):
+    """Долгая команда — «⏳» во время выполнения, потом финальная метка."""
+    import asyncio as _aio
+
+    import maxbot.interactive as I
+
+    async def slow_resolve(session_key, confirm_id, choice):
+        await _aio.sleep(0.3)
+        return "готово"
+
+    monkeypatch.setattr(I, "_resolve_slash_confirm", slow_resolve)
+    monkeypatch.setattr(I, "_FLASH_DELAY", 0.05)
+    disp, api = make_dispatcher()
+    disp.slash_state["7"] = {"session_key": "s", "mid": "mid.1"}
+    await disp.dispatch(_cb("sc:100:once:7"))
+    edits = [t for t in api.edit_log if t[0] == "mid.1"]
+    assert edits[0][1] == "⏳ Выполняю…"
+    assert api.edited["mid.1"][0].startswith("✅")

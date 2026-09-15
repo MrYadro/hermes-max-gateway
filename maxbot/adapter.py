@@ -425,18 +425,23 @@ class MaxAdapter(BasePlatformAdapter):
         logger.info("max: gc: кнопка /%s для chat=%s — синтезирую команду", cmd, chat_id)
         mid = self._greeting_mids.get(str(chat_id))
         kb = _greeting_keyboard(chat_id)
-        try:
-            if mid:  # видимая реакция: текст приветствия → «⏳ Выполняю…»
-                with contextlib.suppress(Exception):
-                    await self._client.edit_message(mid, f"⏳ Выполняю /{cmd}…",
-                                                    attachments=kb)
+
+        async def _run():
             await self._run_synthetic_command(chat_id, f"/{cmd}", user=cb.user)
+
+        try:
+            if mid and self._interactive:
+                # «⏳» только если команда затянулась; быстрый ответ — без мигания,
+                # затем возвращаем приветствие (кнопки остаются)
+                _, flashed = await self._interactive.run_with_flash(
+                    mid, f"⏳ Выполняю /{cmd}…", _run)
+                if flashed:
+                    with contextlib.suppress(Exception):
+                        await self._client.edit_message(mid, _GREETING, attachments=kb)
+            else:
+                await _run()
         except Exception:
             logger.exception("max: gc: /%s не выполнен", cmd)
-        finally:
-            if mid:  # приветствие возвращаем — кнопки остаются для повтора
-                with contextlib.suppress(Exception):
-                    await self._client.edit_message(mid, _GREETING, attachments=kb)
 
     async def _run_synthetic_command(self, chat_id: str, text: str, *, user=None) -> None:
         # Личность — из колбэка (ядро молча роняет события с пустым user_id

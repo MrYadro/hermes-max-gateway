@@ -1,4 +1,5 @@
 """Inline-кнопки MAX: approve/deny, slash-confirm, clarify, choice-picker."""
+import asyncio
 import contextlib
 import inspect
 import itertools
@@ -41,6 +42,8 @@ def _mark_clarify_awaiting(clarify_id: str) -> None:
 _EA_LABELS = {"once": "✅ Одобрено (один раз)", "session": "✅ Одобрено — сессия",
               "always": "✅ Одобрить всегда", "deny": "❌ Отклонено"}
 _SC_LABELS = {"once": "✅ Один раз", "always": "♾️ Всегда", "cancel": "❌ Отмена"}
+# «⏳»-мигание показываем только если операция длится дольше этого
+_FLASH_DELAY = 0.7
 
 
 class InteractiveDispatcher:
@@ -190,13 +193,28 @@ class InteractiveDispatcher:
         except Exception:
             logger.exception("max: callback %r не обработан", payload)
 
-    async def _flash(self, mid: Optional[str], text: str) -> None:
-        """Мигание «⏳ …» на время операции: у MAX нет спиннеров — правим текст,
-        клавиатуру не трогаем (attachments=None = «без изменений»)."""
-        if not mid:
-            return
-        with contextlib.suppress(Exception):
-            await self.api.api_edit(mid, text, None)
+    async def run_with_flash(self, mid: Optional[str], text: str, op, *,
+                             delay: Optional[float] = None):
+        """Выполнить ``op()``; если дольше ``delay`` — мигнуть «⏳» на сообщении
+        (клавиатуру не трогаем). Быстрые операции не мигают вовсе.
+        Возвращает ``(result, flashed)``."""
+        delay = _FLASH_DELAY if delay is None else delay
+        state = {"fired": False}
+
+        async def _delayed():
+            await asyncio.sleep(delay)
+            state["fired"] = True
+            with contextlib.suppress(Exception):
+                await self.api.api_edit(mid, text, None)
+
+        task = asyncio.create_task(_delayed())
+        try:
+            result = await op()
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        return result, state["fired"]
 
     async def _finish(self, cb: Callback, toast: str, edit_text: str,
                       edit_attachments: Optional[list] = (), mid: Optional[str] = None) -> None:
@@ -227,8 +245,9 @@ class InteractiveDispatcher:
         if not st:
             await self._finish(cb, "⌛ Уже обработано", "⌛ Подтверждение уже обработано")
             return
-        await self._flash(st["mid"], "⏳ Обработка…")
-        count = _resolve_approval(st["session_key"], choice)
+        count, _ = await self.run_with_flash(
+            st["mid"], "⏳ Обработка…",
+            lambda: asyncio.to_thread(_resolve_approval, st["session_key"], choice))
         label = _EA_LABELS.get(choice, "Готово") if count else "⌛ Истекло ожидание"
         user = cb.user.name if cb.user else ""
         await self._finish(cb, label, f"{label}" + (f" — {user}" if user else ""), mid=st["mid"])
@@ -239,8 +258,9 @@ class InteractiveDispatcher:
         if not st:
             await self._finish(cb, "⌛ Уже обработано", "⌛ Уже обработано")
             return
-        await self._flash(st["mid"], "⏳ Выполняю…")
-        result_text = await _resolve_slash_confirm(st["session_key"], confirm_id, choice)
+        result_text, _ = await self.run_with_flash(
+            st["mid"], "⏳ Выполняю…",
+            lambda: _resolve_slash_confirm(st["session_key"], confirm_id, choice))
         await self._finish(cb, _SC_LABELS.get(choice, "Готово"),
                            _SC_LABELS.get(choice, "Готово"), mid=st["mid"])
         if result_text:
@@ -293,10 +313,10 @@ class InteractiveDispatcher:
         handler = state.get("on_choice_selected")
         result_text = None
         if handler:
-            await self._flash(state.get("message_id"), f"⏳ {label}…")
             result = handler(chat_id, choice.get("value"))
             if inspect.isawaitable(result):
-                result_text = await result
+                result_text, _ = await self.run_with_flash(
+                    state.get("message_id"), f"⏳ {label}…", lambda: result)
             else:
                 result_text = result
         self.picker_state.pop(chat_id, None)
@@ -325,10 +345,10 @@ class InteractiveDispatcher:
         handler = state.get("on_model_selected")
         result_text = None
         if handler:
-            await self._flash(state.get("message_id"), f"⏳ {model_id}…")
             result = handler(chat_id, model_id, provider_slug)
             if inspect.isawaitable(result):
-                result_text = await result
+                result_text, _ = await self.run_with_flash(
+                    state.get("message_id"), f"⏳ {model_id}…", lambda: result)
             else:
                 result_text = result
         self.model_picker_state.pop(chat_id, None)

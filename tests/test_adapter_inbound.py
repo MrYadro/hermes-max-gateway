@@ -17,6 +17,7 @@ class FakeClient:
         self.sent = []
         self._mid = 0
         self.replied_lookup = {}
+        self.edits = []
 
     async def send_message(self, chat_id, text, **kw):
         self._mid += 1
@@ -45,6 +46,9 @@ def make_adapter():
 class _NoopInteractive:
     async def dispatch(self, callback):
         self.last = callback
+
+    async def run_with_flash(self, mid, text, op, *, delay=None):
+        return await op(), False
 
 
 def _upd_message(text="привет", chat_type="dialog", sender_id=42, chat_id=100, mid="m1", link=None):
@@ -651,10 +655,29 @@ async def test_greeting_button_flashes_progress_then_restores():
     await adapter._handle_update(parse_update(upd))
     assert adapter._client.sent[0][2] and adapter._greeting_mids["100"] == "mid.1"
 
-    adapter.handle_message = _noop_async()
     cb = Callback(callback_id="cb1", payload="gc:100:new",
                   user=User(user_id=42, name="Иван"))
+
+    # быстрая команда: ни «⏳», ни возврата — приветствие не трогаем
+    adapter.handle_message = _noop_async()
     await adapter.on_greeting_cmd(cb)
+    assert adapter._client.edits == []
+
+    # долгая команда: «⏳» и возврат приветствия с клавиатурой
+    import asyncio as _aio
+
+    import maxbot.interactive as I
+
+    class _slow:
+        async def __call__(self, event):
+            await _aio.sleep(0.2)
+
+    adapter.handle_message = _slow()
+    I._FLASH_DELAY = 0.03
+    try:
+        await adapter.on_greeting_cmd(cb)
+    finally:
+        I._FLASH_DELAY = 0.7
     edits = adapter._client.edits
     assert edits[0][1].startswith("⏳ Выполняю /new")
     assert edits[-1][1] == _GREETING
