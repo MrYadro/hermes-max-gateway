@@ -126,6 +126,36 @@ def _lowest_video_url(info: Optional[dict]) -> Optional[str]:
             return str(urls[key])
     return None
 
+
+def _extract_frames(video_path: str, count: int = 4) -> list:
+    """Равномерные кадры видео через ffmpeg — «смотреть» видео без видеоподдержки модели.
+
+    Нет ffmpeg или короткое видео — вернём сколько есть (может быть пусто).
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        return []
+    with contextlib.suppress(Exception):
+        dur = float(subprocess.check_output(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "csv=p=0", video_path]).decode().strip() or 0)
+        if dur <= 0:
+            return []
+        fps = max(count - 1, 1) / dur  # count кадров на длину: fps-фильтр
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.check_call(
+                ["ffmpeg", "-y", "-loglevel", "error", "-i", video_path,
+                 "-vf", f"fps={fps:.6f},scale=512:-2", "-frames:v", str(count),
+                 f"{tmp}/f_%02d.jpg"], timeout=60)
+            import glob as _glob
+
+            return [open(f, "rb").read()
+                    for f in sorted(_glob.glob(f"{tmp}/f_*.jpg"))[:count]]
+    return []
+
 def _greeting_keyboard() -> list:
     from .interactive import keyboard_attachment
     return [keyboard_attachment([[
@@ -697,8 +727,16 @@ class MaxAdapter(BasePlatformAdapter):
                         paths.append(path)
                         types.append(_mime_for(path, "video/mp4") if att.type == "video"
                                      else "application/octet-stream")
-                    if thumb_url:
-                        # миниатюра — кадр-превью: агент «видит» видео без видеоподдержки модели
+                    if path and att.type == "video":
+                        # кадры из видео — мидлграунд: понимание содержимого без видеоподдержки
+                        with contextlib.suppress(Exception):
+                            for i, frame in enumerate(_extract_frames(path)):
+                                fpath = cache_image_from_bytes(frame, ".jpg")
+                                if fpath:
+                                    paths.append(fpath)
+                                    types.append("image/jpeg")
+                    if not any(t.startswith("image/") for t in types) and thumb_url:
+                        # кадров нет (нет ffmpeg?) — хотя бы миниатюра-кадр
                         with contextlib.suppress(Exception):
                             if tpath := await self._download_cached(
                                     att, cache_image_from_bytes, ".jpg",

@@ -365,3 +365,50 @@ def test_lowest_video_url_helper():
     assert _lowest_video_url(info) == "c"
     assert _lowest_video_url({"urls": None}) is None
     assert _lowest_video_url({}) is None
+
+
+async def test_video_frames_extracted_for_vision(monkeypatch):
+    """Кадры из видео -> картинки агенту (ffmpeg); миниатюра не качается."""
+    from maxbot import adapter as A
+    from maxbot.adapter import MaxAdapter
+    from maxbot.models import Attachment, Message, MessageBody
+
+    class FakeCfg:
+        extra = {}
+
+    class FakeClient:
+        async def get_video_info(self, token):
+            return {"urls": {"mp4_144": "http://v/144.mp4"},
+                    "thumbnail": {"url": "http://v/thumb.jpg"}}
+
+    adapter = MaxAdapter(FakeCfg(), client=FakeClient(), transport=None)
+    msg = Message(body=MessageBody(attachments=[
+        Attachment(type="video", payload={"url": "http://v/orig.mp4", "token": "T"})]),
+        chat_id=1, chat_type="dialog")
+
+    async def fake_refresh(m):
+        return m.body.attachments
+
+    async def fake_dl(att, cache_fn, default_ext, mime_map=None, is_doc=False, url=None):
+        assert url == "http://v/144.mp4"
+        return "/tmp/v.mp4"
+
+    cached = []
+
+    def fake_cache(data, ext=".jpg"):
+        cached.append((data, ext))
+        return f"/tmp/frame_{len(cached)}.jpg"
+
+    monkeypatch.setattr(adapter, "_refreshed_attachments", fake_refresh)
+    monkeypatch.setattr(adapter, "_download_cached", fake_dl)
+    monkeypatch.setattr(A, "cache_image_from_bytes", fake_cache)
+
+    def fake_frames(path, count=4):
+        assert path == "/tmp/v.mp4"
+        return [b"J1", b"J2", b"J3"]
+
+    monkeypatch.setattr(A, "_extract_frames", fake_frames)
+    paths, types, _ = await adapter._collect_media(msg)
+    assert paths == ["/tmp/v.mp4", "/tmp/frame_1.jpg", "/tmp/frame_2.jpg", "/tmp/frame_3.jpg"]
+    assert types == ["video/mp4", "image/jpeg", "image/jpeg", "image/jpeg"]
+    assert cached == [(b"J1", ".jpg"), (b"J2", ".jpg"), (b"J3", ".jpg")]
