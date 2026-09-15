@@ -437,13 +437,13 @@ class MaxAdapter(BasePlatformAdapter):
             svc["hb"] = content.strip()
             if svc.get("mid") and svc.get("tool"):
                 with contextlib.suppress(Exception):
-                    await self._client.edit_message(svc["mid"], f'{svc["tool"]}\n{svc["hb"]}')
+                    await self._client.edit_message(svc["mid"], f'{svc["hb"]}\n{svc["tool"]}')
             return SendResult(success=True, message_id=None)
         await self._cleanup_drafts(chat_id)  # Task 12: удаляем streaming-превью
         # новый прогресс-пузырь рождается сразу с Working-строкой, не ждёт правки
         tool_line = _last_tool_line(content)
         if svc.get("hb") and tool_line:
-            content = f'{tool_line}\n{svc["hb"]}'
+            content = f'{svc["hb"]}\n{tool_line}'
         last_mid: Optional[str] = None
         # сессия ветки комментариев канала: ответ уходит комментарием к посту
         if str(chat_id) in self._comment_posts:
@@ -617,7 +617,7 @@ class MaxAdapter(BasePlatformAdapter):
         if not finalize:
             tool_line = _last_tool_line(content)
             if tool_line:
-                compose = f'{tool_line}\n{svc["hb"]}' if svc.get("hb") else tool_line
+                compose = f'{svc["hb"]}\n{tool_line}' if svc.get("hb") else tool_line
                 if svc.get("stale") and svc.get("mid"):
                     # контент ниже пузыря — пересоздаём внизу, старый удаляем
                     old = svc["mid"]

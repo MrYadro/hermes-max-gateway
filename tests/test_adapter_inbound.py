@@ -867,7 +867,7 @@ async def test_service_bubble_single_rolling_above_input():
 
     # правка: последняя операция сверху + Working снизу
     await adapter.edit_message("100", first, '⚙️ browser_exec: "a"\n⚙️ file_read: "config.yaml"')
-    assert adapter._client.edits[-1][1] == '⚙️ file_read: "config.yaml"\n⏳ Working — 9 min'
+    assert adapter._client.edits[-1][1] == '⏳ Working — 9 min\n⚙️ file_read: "config.yaml"'
 
     # heartbeat обновился — пузырь отредактирован без новой отправки
     await adapter.send("100", "⏳ Working — 12 min", metadata={"_interim_send": True})
@@ -976,4 +976,4 @@ async def test_progress_send_born_with_working_line():
     adapter = make_adapter()
     await adapter.send("100", "⏳ Working — 9 min", metadata={"_interim_send": True})
     await adapter.send("100", '⚙️ browser_exec: "a"\n⚙️ file_read: "b"')
-    assert adapter._client.sent[-1][1] == '⚙️ file_read: "b"\n⏳ Working — 9 min'
+    assert adapter._client.sent[-1][1] == '⏳ Working — 9 min\n⚙️ file_read: "b"'
