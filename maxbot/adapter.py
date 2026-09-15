@@ -107,10 +107,27 @@ _MAGIC_EXT = (
 def _sniff_ext(data: bytes) -> str:
     for magic, ext in _MAGIC_EXT:
         if data.startswith(magic):
+            if ext == ".zip":
+                return _zip_container_ext(data)
             return ext
     if data[4:8] == b"ftyp":  # mp4/mov: size(4B) + 'ftyp'
         return ".mp4"
     return ".bin"
+
+
+def _zip_container_ext(data: bytes) -> str:
+    """PK-контейнер → конкретный офисный формат по содержимому
+    (имя файла у MAX часто без расширения: «ТЗ НГ 2026-2027»)."""
+    head = data[:8192]
+    if b"word/" in head:
+        return ".docx"
+    if b"xl/" in head:
+        return ".xlsx"
+    if b"ppt/" in head:
+        return ".pptx"
+    if b"epub" in head:
+        return ".epub"
+    return ".zip"
 
 
 def _file_ext(filename) -> str:
@@ -863,9 +880,12 @@ class MaxAdapter(BasePlatformAdapter):
                     attachments.append(Attachment(
                         type=att.get("type", ""),
                         payload=att.get("payload") or {},
-                        latitude=att.get("latitude"), longitude=att.get("longitude")))
+                        latitude=att.get("latitude"), longitude=att.get("longitude"),
+                        filename=att.get("filename")))
         for att in attachments:
-            logger.info("max: вложение type=%s payload=%s", att.type, str(att.payload)[:250])
+            logger.info("max: вложение type=%s keys=%s filename=%r file=%s",
+                        att.type, sorted(att.payload.keys()),
+                        att.payload.get("filename"), str(att.payload.get("file"))[:150])
             try:
                 if att.type == "image":
                     if path := await self._download_cached(att, cache_image_from_bytes, ".jpg", _MEDIA_EXT_BY_MIME):
@@ -877,7 +897,7 @@ class MaxAdapter(BasePlatformAdapter):
                     if (tr := att.payload.get("transcription")):
                         texts.append(f"[расшифровка голосового] {tr}")
                 elif att.type in ("file", "video"):
-                    ext = _file_ext(att.payload.get("filename"))
+                    ext = _file_ext(att.filename or att.payload.get("filename"))
                     dl_url, thumb_url = None, None
                     if att.type == "video" and att.payload.get("token"):
                         with contextlib.suppress(Exception):
@@ -993,7 +1013,9 @@ class MaxAdapter(BasePlatformAdapter):
         if ext == ".bin":
             ext = _sniff_ext(data)  # MAX не дал имя, content-type generic — смотрим магику
         if is_doc:
-            return cache_fn(data, f"max_attachment{ext}")
+            # оригинальное имя (если дал MAX) — агент видит настоящий заголовок файла
+            base = re.sub(r"[^\w.\- ]+", "_", str(att.filename or "").strip())
+            return cache_fn(data, base if base else f"max_attachment{ext}")
         return cache_fn(data, ext)
 
 

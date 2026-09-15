@@ -696,3 +696,49 @@ async def test_inbound_underscore_command_roundtrip():
     adapter.handle_message = spy
     await adapter._handle_update(_upd_message("/reload_mcp"))
     assert handled == ["/reload-mcp"]
+
+
+class TestFileNames:
+    """Имя файла MAX лежит на уровне вложения; docx≠zip даже без имени."""
+
+    def test_sniff_zip_container_docx(self):
+        from maxbot.adapter import _sniff_ext
+        assert _sniff_ext(b"PK\x03\x04" + b"\x00" * 30 + b"word/document.xml") == ".docx"
+        assert _sniff_ext(b"PK\x03\x04" + b"\x00" * 30 + b"xl/workbook.xml") == ".xlsx"
+        assert _sniff_ext(b"PK\x03\x04" + b"\x00" * 30 + b"zzz/") == ".zip"
+
+    def test_attachment_level_filename_parsed(self):
+        upd = parse_update({"update_type": "message_created", "message": {
+            "recipient": {"chat_type": "dialog", "chat_id": 1},
+            "body": {"mid": "m1", "text": "",
+                     "attachments": [{"type": "file", "filename": "ТЗ НГ.docx",
+                                      "payload": {"url": "https://x/f"}}]},
+            "sender": {"user_id": 2, "name": "И"}}})
+        att = upd.message.body.attachments[0]
+        assert att.filename == "ТЗ НГ.docx"
+
+    async def test_forward_file_keeps_original_name(self, monkeypatch, tmp_path):
+        from maxbot import adapter as A
+
+        saved = {}
+
+        async def fake_dl(self, att, cache_fn, default_ext, mime_map=None, is_doc=False, url=None):
+            saved["ext"] = default_ext
+            saved["name"] = cache_fn(b"data", "ТЗ_НГ.docx")
+            return str(tmp_path / "f.docx")
+
+        monkeypatch.setattr(A.MaxAdapter, "_download_cached", fake_dl)
+        adapter = make_adapter()
+        adapter.handle_message = _noop_async()
+        upd = parse_update({"update_type": "message_created", "message": {
+            "recipient": {"chat_type": "dialog", "chat_id": 100},
+            "body": {"mid": "m2", "text": "смотри"},
+            "link": {"type": "forward", "message": {
+                "mid": "m3", "text": "",
+                "attachments": [
+                    {"type": "file", "filename": "ТЗ НГ.docx",
+                     "payload": {"url": "https://x/f"}}]}},
+            "sender": {"user_id": 42, "name": "Иван"}}})
+        await adapter._handle_update(upd)
+        assert saved["ext"] == ".docx"
+        assert "ТЗ_НГ.docx" in saved["name"]

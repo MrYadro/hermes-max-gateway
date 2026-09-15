@@ -17,6 +17,8 @@ class Attachment:
     # location идёт плоскими полями вложения (не в payload) — не теряем
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    # имя файла MAX держит на уровне вложения (не в payload) — важно для .docx и т.п.
+    filename: Optional[str] = None
 
 
 @dataclass
@@ -66,7 +68,8 @@ def _user(d: Dict[str, Any]) -> Optional[User]:
 
 def _attachments(items: Any) -> List[Attachment]:
     return [Attachment(type=i.get("type", ""), payload=i.get("payload") or {},
-                       latitude=i.get("latitude"), longitude=i.get("longitude"))
+                       latitude=i.get("latitude"), longitude=i.get("longitude"),
+                       filename=i.get("filename"))
             for i in items or [] if isinstance(i, dict)]
 
 
