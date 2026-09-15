@@ -261,3 +261,52 @@ async def test_slash_confirm_flashes_slow_op(monkeypatch):
     edits = [t for t in api.edit_log if t[0] == "mid.1"]
     assert edits[0][1] == "⏳ Выполняю…"
     assert api.edited["mid.1"][0].startswith("✅")
+
+
+class TestKeyboardAttachmentTypes:
+    """Полная матрица кнопок MAX: callback(+intent), link, clipboard, message."""
+
+    def test_default_callback_backcompat(self):
+        kb = keyboard_attachment([[{"text": "ок", "payload": "ea:1:once:1"}]])
+        btn = kb["payload"]["buttons"][0][0]
+        assert btn == {"type": "callback", "text": "ок", "payload": "ea:1:once:1"}
+
+    def test_callback_with_intent(self):
+        kb = keyboard_attachment([[{"text": "✅ Да", "payload": "ea:1:once:1",
+                                    "intent": "positive"}]])
+        btn = kb["payload"]["buttons"][0][0]
+        assert btn["intent"] == "positive"
+
+    def test_link_button(self):
+        kb = keyboard_attachment([[{"type": "link", "text": "Открыть",
+                                    "url": "https://example.com"}]])
+        btn = kb["payload"]["buttons"][0][0]
+        assert btn["type"] == "link" and btn["url"] == "https://example.com"
+
+    def test_clipboard_button(self):
+        kb = keyboard_attachment([[{"type": "clipboard", "text": "📋 Скопировать",
+                                    "payload": "/reload_mcp"}]])
+        btn = kb["payload"]["buttons"][0][0]
+        assert btn == {"type": "clipboard", "text": "📋 Скопировать",
+                       "payload": "/reload_mcp"}
+
+    def test_message_button(self):
+        kb = keyboard_attachment([[{"type": "message", "text": "/new"}]])
+        assert kb["payload"]["buttons"][0][0]["type"] == "message"
+
+
+async def test_approval_buttons_have_intents():
+    """✅-кнопки positive, ❌-кнопки negative — визуальный стиль MAX."""
+    import types as _t
+
+    disp, api = make_dispatcher()
+    prompt = _t.SimpleNamespace(
+        session_key="s", chat_id="100", text="запустить?",
+        actions=[("Одобрить", "once", "primary"), ("Отклонить", "deny", "danger")])
+    await disp.send_exec_approval_prompt(prompt)
+    btns = api.sent["100"][1][0]["payload"]["buttons"][0]
+    by_text = {b["text"]: b for b in btns}
+    approve = next(b for t, b in by_text.items() if "Одобрить" in t)
+    deny = next(b for t, b in by_text.items() if "Отклонить" in t)
+    assert approve["intent"] == "positive"
+    assert deny["intent"] == "negative"

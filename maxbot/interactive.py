@@ -44,6 +44,10 @@ _EA_LABELS = {"once": "✅ Одобрено (один раз)", "session": "✅ 
 _SC_LABELS = {"once": "✅ Один раз", "always": "♾️ Всегда", "cancel": "❌ Отмена"}
 # «⏳»-мигание показываем только если операция длится дольше этого
 _FLASH_DELAY = 0.7
+# визуальный стиль MAX-кнопок: подтверждение/отмена
+_EA_INTENTS = {"once": "positive", "session": "positive", "always": "positive",
+               "deny": "negative"}
+_SC_INTENTS = {"once": "positive", "always": "positive", "cancel": "negative"}
 
 
 class InteractiveDispatcher:
@@ -65,7 +69,8 @@ class InteractiveDispatcher:
         approval_id = next(self._counter)
         _ea_icons = {"once": "✅", "session": "🔁", "always": "♾️", "deny": "❌"}
         flat = [{"text": f"{_ea_icons.get(choice, '•')} {label}",
-                 "payload": f"ea:{prompt.chat_id}:{choice}:{approval_id}"}
+                 "payload": f"ea:{prompt.chat_id}:{choice}:{approval_id}",
+                 "intent": _EA_INTENTS.get(choice, "default")}
                 for label, choice, _style in (prompt.actions or [])]
         if not flat:
             from gateway.platforms.base import SendResult
@@ -79,9 +84,12 @@ class InteractiveDispatcher:
 
     async def send_slash_confirm(self, chat_id, title, message, session_key, confirm_id,
                                  metadata=None):
-        rows = [[{"text": "✅ Один раз", "payload": f"sc:{chat_id}:once:{confirm_id}"},
-                 {"text": "♾️ Всегда", "payload": f"sc:{chat_id}:always:{confirm_id}"},
-                 {"text": "❌ Отмена", "payload": f"sc:{chat_id}:cancel:{confirm_id}"}]]
+        rows = [[{"text": "✅ Один раз", "payload": f"sc:{chat_id}:once:{confirm_id}",
+                  "intent": _SC_INTENTS["once"]},
+                 {"text": "♾️ Всегда", "payload": f"sc:{chat_id}:always:{confirm_id}",
+                  "intent": _SC_INTENTS["always"]},
+                 {"text": "❌ Отмена", "payload": f"sc:{chat_id}:cancel:{confirm_id}",
+                  "intent": _SC_INTENTS["cancel"]}]]
         mid = await self.api.api_send(
             chat_id, sanitize_markdown(f"⚙️ *{title}*\n{message}"), [keyboard_attachment(rows)])
         self.slash_state[confirm_id] = {"session_key": session_key, "mid": mid}
