@@ -310,3 +310,47 @@ async def test_approval_buttons_have_intents():
     deny = next(b for t, b in by_text.items() if "Отклонить" in t)
     assert approve["intent"] == "positive"
     assert deny["intent"] == "negative"
+
+
+class TestPinTool:
+    async def test_pin_requires_message_id(self, monkeypatch):
+        from maxbot.pin_tool import _max_pin_handler
+        r = await _max_pin_handler({"action": "pin", "chat_id": 100})
+        assert "message_id" in r
+
+    async def test_pin_calls_client(self, monkeypatch):
+        import maxbot.pin_tool as P
+
+        calls = []
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def pin_message(self, chat_id, mid):
+                calls.append(("pin", chat_id, mid))
+                return True
+
+        async def _factory(*a, **kw):
+            return _FakeClient()
+
+        import maxbot.max_api as MA
+
+        class _FakeMaxClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return _FakeClient()
+
+            async def __aexit__(self, *a):
+                return False
+
+        monkeypatch.setattr(MA, "MaxClient", _FakeMaxClient)
+        monkeypatch.setattr(P, "_secret", lambda n, d="": "T" if "TOKEN" in n else d)
+        r = await P._max_pin_handler({"action": "pin", "chat_id": 100,
+                                      "message_id": "mid.1"})
+        assert "Закреплено" in r

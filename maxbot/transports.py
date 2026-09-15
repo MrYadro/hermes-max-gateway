@@ -110,8 +110,10 @@ class WebhookTransport:
         self._port = port
         self._secret = secret
         self._path = path
+        # bot_removed/dialog_removed: _purge_chat_state; comment_created: ветки каналов
         self._types = update_types or ["message_created", "message_callback", "bot_started",
-                                       "bot_added", "message_edited", "message_removed"]
+                                       "bot_added", "message_edited", "message_removed",
+                                       "comment_created", "bot_removed", "dialog_removed"]
         self._runner = None
         self._app = None
         self._on_update: Optional[OnUpdate] = None
