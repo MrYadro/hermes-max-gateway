@@ -53,6 +53,16 @@ def _find_stickers(query: str, limit: int = 8) -> list:
     return [dict(item, score=s) for s, item in scored[:limit]]
 
 
+def describe_sticker(code: str):
+    """Запись каталога по коду (set/desc) или None — адаптер экономит токены:
+    известный стикер не гоняется через vision, вместо картинки подставляется описание."""
+    code = str(code or "").strip()
+    for item in _catalog():
+        if item.get("code") == code:
+            return item
+    return None
+
+
 def _secret(name: str, default: str = "") -> str:
     with contextlib.suppress(Exception):
         from gateway.platforms._shared import get_scoped_secret

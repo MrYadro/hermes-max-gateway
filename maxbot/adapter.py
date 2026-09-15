@@ -689,12 +689,19 @@ class MaxAdapter(BasePlatformAdapter):
                     if (code := att.payload.get("code")):
                         from .state import remember_sticker
                         remember_sticker(code)  # агент сможет переотправить через max_sticker
-                    # превью-картинка стикера (если доступна) — агент увидит её через vision
-                    if path := await self._download_cached(att, cache_image_from_bytes, ".png",
-                                                           _MEDIA_EXT_BY_MIME):
-                        paths.append(path)
-                        types.append("image/png")
-                    texts.append("[стикер]")
+                    from .sticker_tool import describe_sticker
+                    if (known := describe_sticker(code or "")):
+                        # известный стикер: описание вместо картинки — vision не тратим
+                        texts.append(f"[стикер: {known.get('set', '')} — {known.get('desc', '')}"
+                                     f" (code={code})]")
+                    else:
+                        # превью-картинка (если доступна) — агент увидит её через vision
+                        if path := await self._download_cached(att, cache_image_from_bytes, ".png",
+                                                               _MEDIA_EXT_BY_MIME):
+                            paths.append(path)
+                            types.append("image/png")
+                        texts.append(f"[стикер code={code}]"
+                                     if code else "[стикер]")
                 elif att.type == "share":
                     title = att.payload.get("title") or att.payload.get("url") or "шеринг"
                     texts.append(f"[шеринг] {title}")

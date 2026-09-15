@@ -86,8 +86,50 @@ def test_adapter_remembers_sticker_codes(monkeypatch):
         Attachment(type="sticker", payload={"code": "s77", "url": "https://x/s.png"})]),
         chat_id=1, chat_type="dialog")
 
-    asyncio.run(adapter._collect_media(msg))
+    _, _, texts = asyncio.run(adapter._collect_media(msg))
     assert [s["code"] for s in state.recent_stickers()] == ["s77"]
+    # агент видит код в тексте — может переотправить или сослаться
+    assert "s77" in texts
+
+
+def test_adapter_known_sticker_skips_vision(monkeypatch):
+    """Стикер из каталога: описание текстом, картинка не скачивается — токены экономятся."""
+    import asyncio
+
+    from maxbot.adapter import MaxAdapter
+    from maxbot.models import Attachment, Message, MessageBody
+
+    class FakeCfg:
+        extra = {}
+
+    async def fake_refresh(msg):
+        return msg.body.attachments
+
+    dl_calls = []
+
+    async def fake_dl(att, cache_fn, default_ext, mime_map=None, is_doc=False):
+        dl_calls.append(att.type)
+        return "/tmp/x.png"
+
+    adapter = MaxAdapter(FakeCfg(), client=None, transport=None)
+    monkeypatch.setattr(adapter, "_refreshed_attachments", fake_refresh)
+    monkeypatch.setattr(adapter, "_download_cached", fake_dl)
+    msg = Message(body=MessageBody(text="", attachments=[
+        Attachment(type="sticker", payload={"code": "50828bb", "url": "https://x/s.png"})]),
+        chat_id=1, chat_type="dialog")
+
+    paths, types, texts = asyncio.run(adapter._collect_media(msg))
+    assert dl_calls == []          # превью не качаем: стикер известен
+    assert paths == [] and types == []
+    assert "50828bb" in texts and "Плачущий" in texts  # описание из каталога
+
+    # неизвестный стикер — прежний путь: картинка + код
+    msg2 = Message(body=MessageBody(text="", attachments=[
+        Attachment(type="sticker", payload={"code": "zz999", "url": "https://x/s.png"})]),
+        chat_id=1, chat_type="dialog")
+    paths2, types2, texts2 = asyncio.run(adapter._collect_media(msg2))
+    assert dl_calls == ["sticker"] and types2 == ["image/png"]
+    assert "zz999" in texts2
 
 
 async def test_sticker_find_by_keyword():
