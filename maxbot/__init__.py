@@ -14,14 +14,12 @@ def register(ctx):
     from .geo_tool import register_geo_tool
     from .group_tool import register_group_tool
     from .hooks import _apply_yaml_config, _env_enablement, _standalone_send, interactive_setup
-    from .share_tool import register_share_tool
     from .sticker_tool import register_sticker_tool
 
     register_group_tool(ctx)    # max_group/max_channel
     register_geo_tool(ctx)      # max_geo
     register_sticker_tool(ctx)  # max_sticker
     register_contact_tool(ctx)  # max_contact
-    register_share_tool(ctx)    # max_share
 
     ctx.register_platform(
         name="max",
