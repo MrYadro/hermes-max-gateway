@@ -563,10 +563,9 @@ async def test_message_removed_interrupts_session():
     guard = asyncio.Event()
     adapter._active_sessions["agent:main:max:dm:100"] = guard
 
-    upd = {"update_type": "message_removed", "marker": 4, "message": {
-        "body": {"mid": "mX", "text": "", "attachments": []},
-        "recipient": {"chat_id": 100, "chat_type": "dialog"},
-        "sender": {"user_id": 42, "name": "Иван"}, "timestamp": 1}}
+    # реальный payload message_removed: плоский message_id, без объекта message
+    upd = {"update_type": "message_removed", "marker": 4,
+           "message_id": "mX", "chat_id": 100, "user_id": 42, "timestamp": 1}
     await adapter._handle_update(parse_update(upd))
     assert guard.is_set()          # interrupt сработал
     assert "mX" not in adapter._mid_sessions  # и почистили

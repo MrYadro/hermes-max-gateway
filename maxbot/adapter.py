@@ -662,12 +662,17 @@ class MaxAdapter(BasePlatformAdapter):
                                 msg.body.mid)
                     await self._on_message(msg)
             elif update.update_type == "message_removed":
-                # удаление: прерываем обработку, если ход по этому сообщению ещё бежит
+                # удаление: прерываем обработку, если ход по этому сообщению ещё бежит.
+                # payload плоский: {"message_id": ..., "chat_id": ...} — без объекта message
                 mid = None
                 if update.message:
                     mid = update.message.body.mid
-                elif isinstance(update.raw, dict):
-                    mid = ((update.raw.get("message") or {}).get("body") or {}).get("mid")
+                if not mid and isinstance(update.raw, dict):
+                    mid = update.raw.get("message_id")
+                    if not mid:
+                        mid = ((update.raw.get("message") or {}).get("body") or {}).get("mid")
+                logger.info("max: message_removed mid=%s | в карте=%s",
+                            mid, str(mid) in self._mid_sessions if mid else None)
                 if mid and str(mid) in self._mid_sessions:
                     session_key, chat_id = self._mid_sessions.pop(str(mid))
                     with contextlib.suppress(Exception):
