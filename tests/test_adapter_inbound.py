@@ -683,3 +683,16 @@ async def test_greeting_button_flashes_progress_then_restores():
     assert edits[0][1].startswith("⏳ Выполняю /new")
     assert edits[-1][1] == _GREETING
     assert edits[-1][2]  # клавиатура возвращена
+
+
+async def test_inbound_underscore_command_roundtrip():
+    """/reload_mcp на входе → событие с /reload-mcp (дефисная команда ядра)."""
+    adapter = make_adapter()
+    handled = []
+
+    async def spy(event):
+        handled.append(event.text)
+
+    adapter.handle_message = spy
+    await adapter._handle_update(_upd_message("/reload_mcp"))
+    assert handled == ["/reload-mcp"]

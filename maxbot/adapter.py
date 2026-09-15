@@ -28,6 +28,20 @@ from .uploads import Uploader
 
 logger = logging.getLogger(__name__)
 
+def _fix_dashed_command(text: str) -> str:
+    """MAX-клиент теряет хвост команды после дефиса («/claude-design» → «/claude»).
+    Поддерживаем `_`-вариант: «/claude_design» переписываем в «/claude-design».
+    Подчёркивания в известных командах нет — переписываем безусловно."""
+    if not text.startswith("/"):
+        return text
+    parts = text.split(maxsplit=1)
+    head = parts[0]
+    if len(head) > 1 and "_" in head[1:]:
+        parts[0] = "/" + head[1:].replace("_", "-")
+        return " ".join(parts)
+    return text
+
+
 GATEWAY_COMMANDS = [
     ("new", "Новая сессия"),
     ("status", "Статус"),
@@ -767,7 +781,7 @@ class MaxAdapter(BasePlatformAdapter):
             self._chat_users[str(msg.chat_id)] = (
                 str(msg.sender.user_id), (msg.sender.name or ""))
         chat_type = "dm" if msg.chat_type == "dialog" else "group"
-        text = msg.body.text or ""
+        text = _fix_dashed_command(msg.body.text or "")
         if chat_type == "group":
             passed, text = await self._group_gate(msg, text)
             if not passed:

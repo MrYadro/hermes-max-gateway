@@ -256,8 +256,24 @@ def comment_markdown(text: str) -> str:
     return _LINK_RE.sub(lambda m: f"{m.group(1)}: {m.group(2)}", sanitize_markdown(text))
 
 
+# «/x-y» только с начала строки (или после маркера списка/цитаты — формат /help):
+# в середине текста дефисные токены трогать нельзя (обычная проза)
+_CMD_DASH_RE = re.compile(
+    r"(?m)^(?P<pre>(?:[ \t]*(?:[-*+>]|\d+\.)[ \t]+)*)(?P<cmd>/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)"
+    r"(?![\w/-])")
+
+
+def alias_dashed_commands(text: str) -> str:
+    """Дефисные команды в листингах (/help, /commands) — код-спаном с `_`-формой:
+    MAX-клиент обрезает команду по дефису при тапе, ``/x_y`` копипастится и
+    отправляется без потерь; входящий адаптер вернёт дефис."""
+    return _CMD_DASH_RE.sub(
+        lambda m: m.group("pre") + "`" + m.group("cmd").replace("-", "_") + "`", text)
+
+
 def sanitize_markdown(text: str) -> str:
     # всё, что меняет структуру, — ТОЛЬКО вне код-блоков (вложенные ``` ломают разметку)
+    text = _outside_code(text, alias_dashed_commands)
     text = _outside_code(text, _strip_html)
     text = _outside_code(text, lambda t: _HR_RE.sub(_HR_GLYPH, t))
 

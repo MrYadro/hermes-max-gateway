@@ -187,3 +187,41 @@ def test_intraword_underscores_untouched():
     # snake_case-идентификаторы не экранируются: MAX покажет \_ буквально
     assert sanitize_markdown("файл user_data_v2 обновлён") == "файл user_data_v2 обновлён"
     assert sanitize_markdown("kolmogorov_smirnov, p_value") == "kolmogorov_smirnov, p_value"
+
+
+class TestDashedCommandAlias:
+    """MAX-клиент обрезает команду по дефису при тапе (/x-y уходит как /x).
+    Исходящий текст показывает _-форму, входящий адаптер переписывает обратно."""
+
+    def test_outbound_dash_to_underscore(self):
+        assert sanitize_markdown("/reload-mcp — перезагрузка") == \
+            "`/reload_mcp` — перезагрузка"
+
+    def test_outbound_list_prefix(self):
+        assert sanitize_markdown("- /codex-runtime: выбор рантайма") == \
+            "• `/codex_runtime`: выбор рантайма"
+
+    def test_outbound_mid_text_untouched(self):
+        text = "путь вида /usr/local-bin или /reload-mcp в тексте"
+        assert sanitize_markdown(text) == text
+
+    def test_outbound_url_untouched(self):
+        text = "см. https://host/reload-mcp и max://user/9"
+        assert sanitize_markdown(text) == text
+
+    def test_outbound_plain_command_untouched(self):
+        assert sanitize_markdown("/new /status") == "/new /status"
+
+    def test_inbound_underscore_to_dash(self):
+        from maxbot.adapter import _fix_dashed_command
+        assert _fix_dashed_command("/reload_mcp") == "/reload-mcp"
+
+    def test_inbound_with_args(self):
+        from maxbot.adapter import _fix_dashed_command
+        assert _fix_dashed_command("/claude_design сделай макет") == \
+            "/claude-design сделай макет"
+
+    def test_inbound_plain_text_untouched(self):
+        from maxbot.adapter import _fix_dashed_command
+        assert _fix_dashed_command("привет_мир") == "привет_мир"
+        assert _fix_dashed_command("/status") == "/status"

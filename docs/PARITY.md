@@ -67,8 +67,11 @@
 |---|---|
 | message_created | ✓ |
 | message_callback | ✓ (без объекта message — mid из стейта кнопок) |
-| bot_started | ✓ (приветствие + клавиатура) |
-| message_edited / message_removed / chat events | ✗ не подписаны |
+| bot_started | ✓ (приветствие + callback-кнопки: /new, /status, /help) |
+| message_edited | ✓ (повторная обработка; правки своих игнорируются) |
+| message_removed | ✓ (interrupt хода + заметка-ретракция в сессию) |
+| bot_added | ✓ (знакомство в группе) |
+| chat events | ✗ не подписаны |
 
 ## Прочее
 
