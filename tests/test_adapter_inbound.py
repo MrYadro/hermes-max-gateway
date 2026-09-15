@@ -559,7 +559,7 @@ async def test_message_edited_redispatches_and_skips_own():
 async def test_message_removed_interrupts_session():
     """Удаление сообщения прерывает бегущую обработку его сессии."""
     adapter = make_adapter()
-    adapter._mid_sessions["mX"] = ("agent:main:max:dm:100", "100")
+    adapter._mid_sessions["mX"] = ("agent:main:max:dm:100", "100", None)
     guard = asyncio.Event()
     adapter._active_sessions["agent:main:max:dm:100"] = guard
 
@@ -569,3 +569,25 @@ async def test_message_removed_interrupts_session():
     await adapter._handle_update(parse_update(upd))
     assert guard.is_set()          # interrupt сработал
     assert "mX" not in adapter._mid_sessions  # и почистили
+
+
+async def test_message_removed_sends_retraction_note():
+    """После прерывания в сессию уходит internal-заметка-ретракция."""
+    adapter = make_adapter()
+    fake_source = adapter.build_source(
+        chat_id="100", chat_name="100", chat_type="dm", user_id="42", user_name="Иван")
+    adapter._mid_sessions["mY"] = ("agent:main:max:dm:100", "100", fake_source)
+    # guard не ставим: заметка должна обработаться сразу (idle-путь)
+
+    notes = []
+
+    async def fake_handle(event):
+        notes.append(event)
+
+    adapter._message_handler = fake_handle  # noqa: SLF001
+    upd = {"update_type": "message_removed", "marker": 5,
+           "message_id": "mY", "chat_id": 100, "user_id": 42, "timestamp": 1}
+    await adapter._handle_update(parse_update(upd))
+    await asyncio.sleep(0.05)
+    assert notes and notes[0].internal is True
+    assert "удалил" in notes[0].text and "gateway_session_key" in notes[0].metadata

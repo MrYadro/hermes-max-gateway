@@ -236,7 +236,7 @@ class MaxAdapter(BasePlatformAdapter):
         self._group_isolation = _gi not in {"0", "false", "no"}
         self._interactive = None  # Task 11: interactive-обвязка
         self._drafts: Dict[Tuple[str, int], Dict[str, Any]] = {}
-        self._mid_sessions: Dict[str, Tuple[str, str]] = {}  # mid -> (session_key, chat_id)
+        self._mid_sessions: Dict[str, Tuple[str, str, Any]] = {}  # mid -> (session_key, chat_id, source)
         self._chat_users: Dict[str, Tuple[str, str]] = {}
         # post_id -> chat_id канала (сессия ветки комментариев)
         self._comment_posts: Dict[str, int] = {}  # Task 12: streaming-превью
@@ -642,10 +642,14 @@ class MaxAdapter(BasePlatformAdapter):
             elif update.update_type == "bot_started":
                 chat_id = update.chat_id
                 if chat_id:
-                    with contextlib.suppress(Exception):
+                    try:
                         await self._client.send_message(
                             int(chat_id), _GREETING, attachments=[_greeting_keyboard()],
                             notify=False)
+                        logger.info("max: bot_started chat=%s — приветствие отправлено", chat_id)
+                    except Exception as exc:
+                        logger.warning("max: bot_started chat=%s — приветствие не ушло: %s",
+                                       chat_id, exc)
             elif update.update_type == "bot_added":
                 # бота добавили в чат: короткое знакомство + как обращаться в группе
                 chat_id = update.chat_id
@@ -674,10 +678,20 @@ class MaxAdapter(BasePlatformAdapter):
                 logger.info("max: message_removed mid=%s | в карте=%s",
                             mid, str(mid) in self._mid_sessions if mid else None)
                 if mid and str(mid) in self._mid_sessions:
-                    session_key, chat_id = self._mid_sessions.pop(str(mid))
+                    session_key, chat_id, source = self._mid_sessions.pop(str(mid))
                     with contextlib.suppress(Exception):
                         await self.interrupt_session_activity(session_key, chat_id)
                     logger.info("max: message_removed mid=%s — обработка прервана", mid)
+                    # ретракция в контекст: без неё удалённое остаётся в истории сессии
+                    # и агент продолжает на него опираться
+                    with contextlib.suppress(Exception):
+                        note = MessageEvent(
+                            text=("[Пользователь удалил своё сообщение. Считай его "
+                                  "несуществующим: не отвечай на него и не используй "
+                                  "в дальнейшем. На эту заметку отвечать не нужно.]"),
+                            message_type=MessageType.TEXT, source=source, internal=True)
+                        note.metadata["gateway_session_key"] = session_key
+                        await self.handle_message(note)
             elif update.update_type == "comment_created" and update.message:
                 await self._on_comment(update)
             elif update.update_type in ("bot_removed", "dialog_removed"):
@@ -737,11 +751,12 @@ class MaxAdapter(BasePlatformAdapter):
             media_urls=media_paths, media_types=media_types, reply_to_message_id=reply_mid)
         if chat_type == "group" and self._group_isolation:
             event.channel_prompt = _GROUP_ISOLATION_PROMPT
-        # mid → сессия: message_removed прервёт бегущий ход по этому сообщению
+        # mid → (сессия, chat_id, source): message_removed прервёт ход и
+        # подсунет агенту заметку-ретракцию
         if msg.body.mid:
             with contextlib.suppress(Exception):
                 self._mid_sessions[str(msg.body.mid)] = (
-                    self._event_session_key(event), str(msg.chat_id))
+                    self._event_session_key(event), str(msg.chat_id), source)
         await self.handle_message(event)
 
     async def _group_gate(self, msg, text: str):
