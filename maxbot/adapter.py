@@ -546,6 +546,17 @@ class MaxAdapter(BasePlatformAdapter):
         except Exception:
             return False
 
+    async def edit_message(self, chat_id: str, message_id: str, content: str,
+                           *, finalize: bool = False) -> SendResult:
+        """Правка на месте (heartbeat «⏳ Working…», стриминг) — вместо новых пузырей."""
+        if not self._client:
+            return SendResult(success=False, error="not connected")
+        try:
+            ok = await self._client.edit_message(message_id, sanitize_markdown(content))
+        except Exception as exc:
+            return SendResult(success=False, error=str(exc))
+        return SendResult(success=bool(ok), message_id=message_id if ok else None)
+
     async def _send_attachment(self, chat_id: str, path: str, kind: str,
                                caption: Optional[str]) -> SendResult:
         if not self._client:

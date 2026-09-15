@@ -806,3 +806,22 @@ async def test_document_cache_dedup_by_hash(tmp_path, monkeypatch):
     assert len(calls) == 1  # второй раз — переиспользовали
     assert hashlib.sha1(b"data").hexdigest()[:10] in calls[0]
     assert "ТЗ_НГ" in calls[0]
+
+
+async def test_edit_message_sanitizes_and_returns_mid():
+    """Heartbeat-редактирование: ядро зовёт edit_message вместо новых пузырей."""
+    adapter = make_adapter()
+    res = await adapter.edit_message("100", "m1", "⏳ Working — 9 min")
+    assert res.success and res.message_id == "m1"
+    assert adapter._client.edits == [("m1", "⏳ Working — 9 min", None)]
+
+
+async def test_edit_message_failure_returns_not_success():
+    adapter = make_adapter()
+
+    async def boom(message_id, text, *, attachments=None):
+        raise RuntimeError("boom")
+
+    adapter._client.edit_message = boom
+    res = await adapter.edit_message("100", "m1", "x")
+    assert not res.success and "boom" in (res.error or "")
