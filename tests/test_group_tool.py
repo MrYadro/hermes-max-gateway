@@ -4,7 +4,7 @@ import pytest
 
 pytest.importorskip("gateway.platforms.base")
 
-from maxbot.group_tool import _SCHEMA, _max_group_handler, register_group_tool
+from maxbot.group_tool import _CHANNEL_SCHEMA, _SCHEMA, _max_group_handler, register_group_tool
 
 
 class FakeCtx:
@@ -16,8 +16,12 @@ class FakeCtx:
 
 
 def test_schema_shape():
-    assert _SCHEMA["required"] == ["action"]
-    assert set(_SCHEMA["properties"]) >= {"action", "chat_id", "message_id", "user_id"}
+    # полный OpenAI-def: модель видит description+parameters через tool_describe
+    for schema in (_SCHEMA, _CHANNEL_SCHEMA):
+        assert schema["description"] and schema["parameters"]["type"] == "object"
+    assert _SCHEMA["parameters"]["required"] == ["action"]
+    assert set(_SCHEMA["parameters"]["properties"]) >= {
+        "action", "chat_id", "message_id", "user_id"}
 
 
 def test_register_wires_tool():

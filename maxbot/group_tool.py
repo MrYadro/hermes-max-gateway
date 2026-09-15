@@ -28,38 +28,48 @@ _ACTIONS_HELP = (
 )
 
 _CHANNEL_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "action": {"type": "string",
-                   "enum": ["comments_list", "comment_post", "comment_edit", "comment_delete"],
-                   "description": "comments_list — комментарии к посту (post_id); "
-                                  "comment_post — написать комментарий (post_id, text); "
-                                  "comment_edit — править свой (post_id, comment_id, text); "
-                                  "comment_delete — удалить (post_id, comment_id)"},
-        "post_id": {"type": "string", "description": "mid поста в канале"},
-        "comment_id": {"type": "string", "description": "для comment_edit/comment_delete"},
-        "text": {"type": "string", "description": "текст комментария (markdown без ссылок)"},
+    "description": "Комментарии к постам канала MAX (бот — админ канала): список, отправка, "
+                   "правка, удаление. В комментариях не поддерживаются ссылки и упоминания.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string",
+                       "enum": ["comments_list", "comment_post", "comment_edit", "comment_delete"],
+                       "description": "comments_list — комментарии к посту (post_id); "
+                                      "comment_post — написать комментарий (post_id, text); "
+                                      "comment_edit — править свой (post_id, comment_id, text); "
+                                      "comment_delete — удалить (post_id, comment_id)"},
+            "post_id": {"type": "string", "description": "mid поста в канале"},
+            "comment_id": {"type": "string", "description": "для comment_edit/comment_delete"},
+            "text": {"type": "string", "description": "текст комментария (markdown без ссылок)"},
+        },
+        "required": ["action"],
     },
-    "required": ["action"],
 }
 
 
 _SCHEMA = {
-    "type": "object",
-    "properties": {
-        "action": {"type": "string", "enum": ["pin", "unpin", "pinned", "my_permissions", "members", "admins", "add_admin",
-                                              "remove_admin", "kick", "leave", "info", "rename"],
-                   "description": _ACTIONS_HELP},
-        "chat_id": {"type": "integer",
-                    "description": "ID чата MAX; по умолчанию — текущий чат сессии"},
-        "message_id": {"type": "string", "description": "для pin: ID сообщения (mid)"},
-        "user_id": {"type": "integer", "description": "для add_admin/remove_admin/kick"},
-        "permissions": {"type": "array", "items": {"type": "string"},
-                        "description": "права нового админа: read_all_messages, edit, write, delete"},
-        "title": {"type": "string", "description": "для rename: новое название чата"},
-        "description": {"type": "string", "description": "для rename: новое описание чата"},
+    "description": "Управление групповым чатом MAX: закрепление сообщений, участники, "
+                   "админы, кик, выход, переименование. Требует прав администратора у бота.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string",
+                       "enum": ["pin", "unpin", "pinned", "my_permissions", "members",
+                                "admins", "add_admin", "remove_admin", "kick", "leave",
+                                "info", "rename"],
+                       "description": _ACTIONS_HELP},
+            "chat_id": {"type": "integer",
+                        "description": "ID чата MAX; по умолчанию — текущий чат сессии"},
+            "message_id": {"type": "string", "description": "для pin: ID сообщения (mid)"},
+            "user_id": {"type": "integer", "description": "для add_admin/remove_admin/kick"},
+            "permissions": {"type": "array", "items": {"type": "string"},
+                            "description": "права нового админа: read_all_messages, edit, write, delete"},
+            "title": {"type": "string", "description": "для rename: новое название чата"},
+            "description": {"type": "string", "description": "для rename: новое описание чата"},
+        },
+        "required": ["action"],
     },
-    "required": ["action"],
 }
 
 
@@ -196,8 +206,7 @@ def register_group_tool(ctx) -> None:
         handler=_max_channel_handler,
         check_fn=check_requirements,
         is_async=True,
-        description="Комментарии к постам канала MAX (бот — админ канала): список, отправка, "
-                    "правка, удаление. В комментариях не поддерживаются ссылки и упоминания.")
+        description=_CHANNEL_SCHEMA["description"])
     ctx.register_tool(
         name="max_group",
         toolset="hermes-max",
@@ -205,5 +214,4 @@ def register_group_tool(ctx) -> None:
         handler=_max_group_handler,
         check_fn=check_requirements,
         is_async=True,
-        description="Управление групповым чатом MAX: закрепление сообщений, участники, "
-                    "админы, кик, выход, переименование. Требует прав администратора у бота.")
+        description=_SCHEMA["description"])

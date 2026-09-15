@@ -6,14 +6,18 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 _GEO_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "latitude": {"type": "number", "description": "широта, -90..90"},
-        "longitude": {"type": "number", "description": "долгота, -180..180"},
-        "chat_id": {"type": "integer",
-                    "description": "ID чата MAX; по умолчанию — текущий чат сессии"},
+    "description": "Отправить геопозицию в чат MAX (карта с точкой): широта и долгота. "
+                   "chat_id по умолчанию — текущий чат сессии.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "latitude": {"type": "number", "description": "широта, -90..90"},
+            "longitude": {"type": "number", "description": "долгота, -180..180"},
+            "chat_id": {"type": "integer",
+                        "description": "ID чата MAX; по умолчанию — текущий чат сессии"},
+        },
+        "required": ["latitude", "longitude"],
     },
-    "required": ["latitude", "longitude"],
 }
 
 
@@ -80,5 +84,4 @@ def register_geo_tool(ctx) -> None:
         handler=_max_geo_handler,
         check_fn=check_requirements,
         is_async=True,
-        description="Отправить геопозицию в чат MAX (карта с точкой): широта и долгота. "
-                    "chat_id по умолчанию — текущий чат сессии.")
+        description=_GEO_SCHEMA["description"])

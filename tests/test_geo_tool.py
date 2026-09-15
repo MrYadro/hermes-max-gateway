@@ -51,9 +51,11 @@ async def test_geo_validates_coordinates(monkeypatch):
 
 
 def test_geo_schema_shape():
-    assert _GEO_SCHEMA["properties"]["latitude"]["type"] == "number"
-    assert _GEO_SCHEMA["properties"]["longitude"]["type"] == "number"
-    assert set(_GEO_SCHEMA["required"]) == {"latitude", "longitude"}
+    assert _GEO_SCHEMA["description"]  # полный OpenAI-def, а не голые параметры
+    params = _GEO_SCHEMA["parameters"]
+    assert params["properties"]["latitude"]["type"] == "number"
+    assert params["properties"]["longitude"]["type"] == "number"
+    assert set(params["required"]) == {"latitude", "longitude"}
 
 
 def test_register_registers_geo_and_group_tools():

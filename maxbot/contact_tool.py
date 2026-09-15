@@ -6,14 +6,18 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 _CONTACT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "name": {"type": "string", "description": "имя контакта (FN)"},
-        "phone": {"type": "string", "description": "телефон в любом формате, лучше +7..."},
-        "chat_id": {"type": "integer",
-                    "description": "ID чата MAX; по умолчанию — текущий чат сессии"},
+    "description": "Отправить контакт в чат MAX (карточка vCard): имя и телефон. "
+                   "chat_id по умолчанию — текущий чат сессии.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "имя контакта (FN)"},
+            "phone": {"type": "string", "description": "телефон в любом формате, лучше +7..."},
+            "chat_id": {"type": "integer",
+                        "description": "ID чата MAX; по умолчанию — текущий чат сессии"},
+        },
+        "required": ["name", "phone"],
     },
-    "required": ["name", "phone"],
 }
 
 
@@ -74,5 +78,4 @@ def register_contact_tool(ctx) -> None:
         handler=_max_contact_handler,
         check_fn=check_requirements,
         is_async=True,
-        description="Отправить контакт в чат MAX (карточка vCard): имя и телефон. "
-                    "chat_id по умолчанию — текущий чат сессии.")
+        description=_CONTACT_SCHEMA["description"])

@@ -10,19 +10,25 @@ from .state import recent_stickers
 logger = logging.getLogger(__name__)
 
 _STICKER_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "action": {"type": "string", "enum": ["send", "recent", "find"],
-                   "description": "send — отправить стикер (code; по умолчанию последний "
-                                  "присланный пользователем); recent — коды недавних "
-                                  "присланных; find — поиск по каталогу стандартных "
-                                  "наборов (query, например «мишка радуется»)"},
-        "code": {"type": "string", "description": "код стикера (из find/recent или от пользователя)"},
-        "query": {"type": "string", "description": "для find: что искать (эмоция/действие)"},
-        "chat_id": {"type": "integer",
-                    "description": "ID чата MAX; по умолчанию — текущий чат сессии"},
+    "description": "Стикеры MAX. find+query — поиск по каталогу стандартных наборов "
+                   "(например «мишка радуется», «сердце») возвращает коды; send+code — "
+                   "отправить (по умолчанию — последний присланный пользователем); "
+                   "recent — коды недавних присланных.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["send", "recent", "find"],
+                       "description": "find — поиск по каталогу (query); send — отправить "
+                                      "(code; по умолчанию последний присланный); recent — "
+                                      "коды недавних присланных"},
+            "code": {"type": "string",
+                     "description": "код стикера (из find/recent или от пользователя)"},
+            "query": {"type": "string", "description": "для find: что искать (эмоция/действие)"},
+            "chat_id": {"type": "integer",
+                        "description": "ID чата MAX; по умолчанию — текущий чат сессии"},
+        },
+        "required": ["action"],
     },
-    "required": ["action"],
 }
 
 
@@ -120,7 +126,4 @@ def register_sticker_tool(ctx) -> None:
         handler=_max_sticker_handler,
         check_fn=check_requirements,
         is_async=True,
-        description="Стикеры MAX. find+query — поиск по каталогу стандартных наборов "
-                    "(например «мишка радуется», «сердце») возвращает коды; send+code — "
-                    "отправить (по умолчанию — последний присланный пользователем); "
-                    "recent — коды недавних присланных.")
+        description=_STICKER_SCHEMA["description"])
