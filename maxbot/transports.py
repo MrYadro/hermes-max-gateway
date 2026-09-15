@@ -143,12 +143,19 @@ class WebhookTransport:
             supplied = next((request.headers[h] for h in self._SECRET_HEADERS
                              if h in request.headers), None)
             if supplied != self._secret:
+                logger.warning("max webhook: отклонён (секрет), update=%.200s",
+                               (await request.text())[:200])
                 return aiohttp_web_response(status=401, text="bad secret")
         try:
             data = await request.json()
         except Exception:
+            logger.warning("max webhook: bad json")
             return aiohttp_web_response(status=400, text="bad json")
         update = parse_update(data if isinstance(data, dict) else {})
+        logger.info("max webhook: update_type=%s chat=%s link=%s text=%.60s",
+                    update.update_type, update.chat_id,
+                    (update.message.link if update.message else None),
+                    (update.message.body.text or "") if update.message else "")
         if self._on_update is not None:
             asyncio.create_task(self._safe_dispatch(update))
         return aiohttp_web_response(status=200, text="ok")

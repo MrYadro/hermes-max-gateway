@@ -23,6 +23,7 @@ from gateway.platforms.event import MessageEvent, MessageType
 from .interactive import InteractiveDispatcher
 from .markdown import comment_markdown, sanitize_markdown
 from .max_api import MaxApiError, MaxClient
+from .models import Attachment
 from .uploads import Uploader
 
 logger = logging.getLogger(__name__)
@@ -722,6 +723,21 @@ class MaxAdapter(BasePlatformAdapter):
     async def _collect_media(self, msg):
         paths, types, texts = [], [], []
         attachments = await self._refreshed_attachments(msg)
+        # пересылка: контент лежит инлайном в link.message (текст+вложения+автор)
+        link = msg.link if isinstance(msg.link, dict) else {}
+        if link.get("type") == "forward" and isinstance(link.get("message"), dict):
+            inner = link["message"]
+            author = ((link.get("sender") or {}).get("name")
+                      or (link.get("sender") or {}).get("first_name") or "неизвестного")
+            fwd_text = str(inner.get("text") or "").strip()
+            head = f"[переслано от {author}]"
+            texts.append(f"{head} {fwd_text}".strip())
+            for att in inner.get("attachments") or []:
+                if isinstance(att, dict):
+                    attachments.append(Attachment(
+                        type=att.get("type", ""),
+                        payload=att.get("payload") or {},
+                        latitude=att.get("latitude"), longitude=att.get("longitude")))
         for att in attachments:
             logger.info("max: вложение type=%s payload=%s", att.type, str(att.payload)[:250])
             try:

@@ -469,3 +469,43 @@ async def test_inbound_message_marks_seen(monkeypatch):
     await adapter._handle_update(_upd_message())
     await asyncio.sleep(0.05)
     assert (100, "mark_seen") in actions
+
+
+async def test_forwarded_message_content_processed(monkeypatch):
+    """Пересылка: контент и вложения лежат инлайном в link.message — обрабатываем."""
+    from maxbot.adapter import MaxAdapter
+    from maxbot.models import parse_update
+
+    adapter = MaxAdapter(FakeCfg(), client=FakeClient(), transport=None)
+
+    fwd = {
+        "update_type": "message_created", "marker": 1,
+        "message": {
+            "body": {"mid": "m2", "text": "", "attachments": []},
+            "recipient": {"chat_id": 100, "chat_type": "dialog"},
+            "sender": {"user_id": 42, "name": "Иван"},
+            "timestamp": 1,
+            "link": {
+                "type": "forward",
+                "message": {"mid": "m1", "text": "оки",
+                            "attachments": [{"type": "file", "payload": {
+                                "filename": "ТЗ.docx", "token": "T"}}]},
+                "sender": {"user_id": 4460279, "name": "Эльвира"},
+            },
+        },
+    }
+
+    async def fake_dl(att, cache_fn, default_ext, mime_map=None, is_doc=False, url=None):
+        assert default_ext == ".docx"  # имя файла пересланного вложения дошло
+        return "/tmp/fwd.docx"
+
+    async def fake_refresh(m):
+        return m.body.attachments
+
+    monkeypatch.setattr(adapter, "_refreshed_attachments", fake_refresh)
+    monkeypatch.setattr(adapter, "_download_cached", fake_dl)
+
+    upd = parse_update(fwd)
+    paths, types, texts = await adapter._collect_media(upd.message)
+    assert "[переслано от Эльвира]" in texts and "оки" in texts
+    assert paths == ["/tmp/fwd.docx"]
