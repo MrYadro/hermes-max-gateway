@@ -190,6 +190,14 @@ class InteractiveDispatcher:
         except Exception:
             logger.exception("max: callback %r не обработан", payload)
 
+    async def _flash(self, mid: Optional[str], text: str) -> None:
+        """Мигание «⏳ …» на время операции: у MAX нет спиннеров — правим текст,
+        клавиатуру не трогаем (attachments=None = «без изменений»)."""
+        if not mid:
+            return
+        with contextlib.suppress(Exception):
+            await self.api.api_edit(mid, text, None)
+
     async def _finish(self, cb: Callback, toast: str, edit_text: str,
                       edit_attachments: Optional[list] = (), mid: Optional[str] = None) -> None:
         """Завершить нажатие: toast + правка сообщения с клавиатурой.
@@ -219,6 +227,7 @@ class InteractiveDispatcher:
         if not st:
             await self._finish(cb, "⌛ Уже обработано", "⌛ Подтверждение уже обработано")
             return
+        await self._flash(st["mid"], "⏳ Обработка…")
         count = _resolve_approval(st["session_key"], choice)
         label = _EA_LABELS.get(choice, "Готово") if count else "⌛ Истекло ожидание"
         user = cb.user.name if cb.user else ""
@@ -230,6 +239,7 @@ class InteractiveDispatcher:
         if not st:
             await self._finish(cb, "⌛ Уже обработано", "⌛ Уже обработано")
             return
+        await self._flash(st["mid"], "⏳ Выполняю…")
         result_text = await _resolve_slash_confirm(st["session_key"], confirm_id, choice)
         await self._finish(cb, _SC_LABELS.get(choice, "Готово"),
                            _SC_LABELS.get(choice, "Готово"), mid=st["mid"])
@@ -283,6 +293,7 @@ class InteractiveDispatcher:
         handler = state.get("on_choice_selected")
         result_text = None
         if handler:
+            await self._flash(state.get("message_id"), f"⏳ {label}…")
             result = handler(chat_id, choice.get("value"))
             if inspect.isawaitable(result):
                 result_text = await result
@@ -314,6 +325,7 @@ class InteractiveDispatcher:
         handler = state.get("on_model_selected")
         result_text = None
         if handler:
+            await self._flash(state.get("message_id"), f"⏳ {model_id}…")
             result = handler(chat_id, model_id, provider_slug)
             if inspect.isawaitable(result):
                 result_text = await result

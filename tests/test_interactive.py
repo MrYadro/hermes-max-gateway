@@ -225,3 +225,25 @@ async def test_greeting_button_runs_command_without_toast(monkeypatch):
     assert ran == ["gc:100:new"]
     assert not api.answered          # тоста нет
     assert not api.edited            # приветствие не редактируем
+
+
+async def test_slash_confirm_flashes_progress():
+    """Пока команда выполняется — на сообщении «⏳ Выполняю…», потом финальная метка."""
+    import maxbot.interactive as I
+
+    disp, api = make_dispatcher()
+    calls = []
+
+    async def slow_resolve(session_key, confirm_id, choice):
+        calls.append(api.edited.get("mid.1"))
+        return "готово"
+
+    orig = I._resolve_slash_confirm
+    I._resolve_slash_confirm = slow_resolve
+    try:
+        disp.slash_state["7"] = {"session_key": "s", "mid": "mid.1"}
+        await disp.dispatch(_cb("sc:100:once:7"))
+    finally:
+        I._resolve_slash_confirm = orig
+    assert calls == [("⏳ Выполняю…", None)]      # во время выполнения — мигание
+    assert api.edited["mid.1"][0].startswith("✅")  # после — финал, кнопки сняты

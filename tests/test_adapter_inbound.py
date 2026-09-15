@@ -26,6 +26,11 @@ class FakeClient:
     async def get_message(self, message_id):
         return self.replied_lookup.get(message_id)
 
+    async def edit_message(self, message_id, text, **kw):
+        self.edits = getattr(self, "edits", [])
+        self.edits.append((message_id, text, kw.get("attachments")))
+        return True
+
 
 def make_adapter():
     adapter = MaxAdapter(FakeCfg(), client=FakeClient(), transport=None)
@@ -629,3 +634,28 @@ async def test_synthetic_command_uses_callback_user():
     await adapter.on_greeting_cmd(cb)
     assert seen["user_id"] == "42"
     assert adapter._chat_users["100"] == ("42", "Иван")
+
+
+class _noop_async:
+    async def __call__(self, event):
+        return None
+
+
+async def test_greeting_button_flashes_progress_then_restores():
+    """Нажатие: текст → «⏳ Выполняю…», после команды — обратно приветствие."""
+    from maxbot.adapter import _GREETING
+    from maxbot.models import Callback, User
+    adapter = make_adapter()
+    upd = {"update_type": "bot_started", "chat_id": 100, "marker": 1,
+           "user": {"user_id": 42, "name": "Иван"}, "timestamp": 1}
+    await adapter._handle_update(parse_update(upd))
+    assert adapter._client.sent[0][2] and adapter._greeting_mids["100"] == "mid.1"
+
+    adapter.handle_message = _noop_async()
+    cb = Callback(callback_id="cb1", payload="gc:100:new",
+                  user=User(user_id=42, name="Иван"))
+    await adapter.on_greeting_cmd(cb)
+    edits = adapter._client.edits
+    assert edits[0][1].startswith("⏳ Выполняю /new")
+    assert edits[-1][1] == _GREETING
+    assert edits[-1][2]  # клавиатура возвращена

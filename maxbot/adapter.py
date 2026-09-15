@@ -239,6 +239,7 @@ class MaxAdapter(BasePlatformAdapter):
         self._drafts: Dict[Tuple[str, int], Dict[str, Any]] = {}
         self._mid_sessions: Dict[str, Tuple[str, str, Any]] = {}  # mid -> (session_key, chat_id, source)
         self._chat_users: Dict[str, Tuple[str, str]] = {}
+        self._greeting_mids: Dict[str, str] = {}
         # post_id -> chat_id канала (сессия ветки комментариев)
         self._comment_posts: Dict[str, int] = {}  # Task 12: streaming-превью
 
@@ -422,11 +423,20 @@ class MaxAdapter(BasePlatformAdapter):
             return
         _, chat_id, cmd = parts
         logger.info("max: gc: кнопка /%s для chat=%s — синтезирую команду", cmd, chat_id)
+        mid = self._greeting_mids.get(str(chat_id))
+        kb = _greeting_keyboard(chat_id)
         try:
+            if mid:  # видимая реакция: текст приветствия → «⏳ Выполняю…»
+                with contextlib.suppress(Exception):
+                    await self._client.edit_message(mid, f"⏳ Выполняю /{cmd}…",
+                                                    attachments=kb)
             await self._run_synthetic_command(chat_id, f"/{cmd}", user=cb.user)
-            logger.info("max: gc: /%s отправлен в handle_message", cmd)
         except Exception:
             logger.exception("max: gc: /%s не выполнен", cmd)
+        finally:
+            if mid:  # приветствие возвращаем — кнопки остаются для повтора
+                with contextlib.suppress(Exception):
+                    await self._client.edit_message(mid, _GREETING, attachments=kb)
 
     async def _run_synthetic_command(self, chat_id: str, text: str, *, user=None) -> None:
         # Личность — из колбэка (ядро молча роняет события с пустым user_id
@@ -668,11 +678,13 @@ class MaxAdapter(BasePlatformAdapter):
                 chat_id = update.chat_id
                 if chat_id:
                     try:
-                        # callback-кнопки: тихое выполнение команды + тост
-                        await self._client.send_message(
+                        mid = await self._client.send_message(
                             int(chat_id), _GREETING,
                             attachments=_greeting_keyboard(chat_id),
                             notify=False)
+                        # mid нужен кнопкам: «⏳ Выполняю…» → возврат текста приветствия
+                        if mid:
+                            self._greeting_mids[str(chat_id)] = mid
                         logger.info("max: bot_started chat=%s — приветствие отправлено", chat_id)
                     except Exception as exc:
                         logger.warning("max: bot_started chat=%s — приветствие не ушло: %s",
