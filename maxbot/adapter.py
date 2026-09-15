@@ -460,6 +460,7 @@ class MaxAdapter(BasePlatformAdapter):
         if tool_line:
             old_mid = svc.get("mid")
             svc.update(mid=last_mid, machinery_mid=last_mid, tool=tool_line, stale=False)
+            logger.info("max: служебный пузырь создан %s: %s", last_mid, tool_line[:60])
             if old_mid and old_mid != last_mid:
                 with contextlib.suppress(Exception):
                     await self._client.delete_message(old_mid)
@@ -627,6 +628,9 @@ class MaxAdapter(BasePlatformAdapter):
                 real_mid = svc.get("mid") or message_id
                 svc.update(mid=real_mid, tool=tool_line)
                 text = compose  # катящаяся строка + Working строкой ниже
+                if svc.get("hb") and not svc.get("hb_seen"):
+                    svc["hb_seen"] = True
+                    logger.info("max: Working вживлён в пузырь %s", real_mid)
         try:
             ok = await self._client.edit_message(real_mid, sanitize_markdown(text))
         except Exception as exc:
