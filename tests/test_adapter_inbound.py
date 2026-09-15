@@ -878,3 +878,19 @@ async def test_service_bubble_single_rolling_above_input():
     res = await adapter.send("100", '⚙️ browser_exec: "ещё раз"')
     assert res.message_id != first
     assert first in adapter._client.deleted
+
+
+async def test_service_bubble_survives_foreign_lines():
+    """Посторонняя строка (approval/подсказка) не ломает катящуюся строку
+    и удаление старого пузыря."""
+    adapter = make_adapter()
+    res = await adapter.send("100", '⚙️ browser_exec: "первый"')
+    first = res.message_id
+    # правка с посторонней строкой среди tool-строк — всё равно одна операция
+    await adapter.edit_message("100", first,
+                               '⚙️ browser_exec: "a"\n⚠️ Command Approval Required\n⚙️ file_read: "b"')
+    assert adapter._client.edits[-1][1].count("\n") == 0  # одна строка (без Working)
+    assert adapter._client.edits[-1][1] == '⚙️ file_read: "b"'
+    # новый сегмент с посторонней строкой — старый пузырь всё равно удалён
+    res = await adapter.send("100", '⚠️ Command Approval Required\n⚙️ browser_exec: "ещё"')
+    assert first in adapter._client.deleted

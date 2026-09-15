@@ -230,10 +230,10 @@ def _greeting_keyboard(chat_id) -> list:
 _TOOL_LINE_RE = re.compile(r"^\S{1,3} [a-z_][a-z0-9_.]*(\([^)]*\))?(: .*)?(\s\(×\d+\))?$")
 
 
-def _is_tool_text(text: str) -> bool:
-    """Весь текст — tool-строки (прогресс-пузырь), не проза."""
+def _last_tool_line(text: str) -> Optional[str]:
+    """Последняя строка текста, если это операция прогресса; иначе None (проза/финал)."""
     lines = [ln for ln in (text or "").splitlines() if ln.strip()]
-    return bool(lines) and all(_TOOL_LINE_RE.match(ln) for ln in lines)
+    return lines[-1] if lines and _TOOL_LINE_RE.match(lines[-1]) else None
 
 
 _GREETING = (
@@ -446,9 +446,10 @@ class MaxAdapter(BasePlatformAdapter):
         except MaxApiError as exc:
             return SendResult(success=False, error=str(exc))
         # прогресс-пузырь: всегда один и внизу — старый удаляем, запоминаем новый
-        if last_mid and _is_tool_text(content):
+        tool_line = _last_tool_line(content) if last_mid else None
+        if tool_line:
             old_mid = svc.get("mid")
-            svc.update(mid=last_mid, tool=None)
+            svc.update(mid=last_mid, tool=tool_line)
             if old_mid and old_mid != last_mid:
                 with contextlib.suppress(Exception):
                     await self._client.delete_message(old_mid)
@@ -582,19 +583,19 @@ class MaxAdapter(BasePlatformAdapter):
                            *, finalize: bool = False) -> SendResult:
         """Правка на месте (heartbeat «⏳ Working…», стриминг) — вместо новых пузырей.
 
-        Прогресс-пузырь схлопываем в катящуюся строку: если весь текст — tool-строки,
-        показываем только последнюю операцию (финал и прозу не трогаем)."""
+        Прогресс-пузырь схлопываем в катящуюся строку: последняя операция
+        сверху + Working снизу (финал finalize=True и прозу не трогаем)."""
         if not self._client:
             return SendResult(success=False, error="not connected")
         text = content
         svc = self._svc_state.setdefault(str(chat_id), {})
         if not finalize:
-            lines = [ln for ln in content.splitlines() if ln.strip()]
-            if _is_tool_text(content):
-                text = lines[-1]  # катящаяся строка: только последняя операция
-                svc.update(mid=message_id, tool=text)
+            tool_line = _last_tool_line(content)
+            if tool_line:
+                text = tool_line  # катящаяся строка: только последняя операция
+                svc.update(mid=message_id, tool=tool_line)
                 if svc.get("hb"):
-                    text = f'{text}\n{svc["hb"]}'  # Working — строкой ниже, над полем ввода
+                    text = f'{tool_line}\n{svc["hb"]}'  # Working — строкой ниже
         try:
             ok = await self._client.edit_message(message_id, sanitize_markdown(text))
         except Exception as exc:
