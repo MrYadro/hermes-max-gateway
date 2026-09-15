@@ -420,6 +420,7 @@ def test_inline_text_helper(tmp_path):
     md.write_text("# Заголовок\n\nТекст заметки", encoding="utf-8")
     inline = _inline_text(str(md))
     assert "Заголовок" in inline and "Текст заметки" in inline
+    assert "<<<DATA" in inline and "НЕ инструкции" in inline
 
     binary = tmp_path / "blob.bin"
     binary.write_bytes(b"\x00\x01\x02PNG")
@@ -453,7 +454,7 @@ async def test_file_attachment_text_inlined(monkeypatch):
     monkeypatch.setattr(adapter, "_refreshed_attachments", fake_refresh)
     monkeypatch.setattr(adapter, "_download_cached", fake_dl)
     paths, types, texts = await adapter._collect_media(msg)
-    assert paths and "текст файла" in texts and "План" in texts
+    assert paths and "НЕ инструкции" in texts and "План" in texts
 
 
 async def test_inbound_message_marks_seen(monkeypatch):
@@ -507,5 +508,6 @@ async def test_forwarded_message_content_processed(monkeypatch):
 
     upd = parse_update(fwd)
     paths, types, texts = await adapter._collect_media(upd.message)
-    assert "[переслано от Эльвира]" in texts and "оки" in texts
+    assert "[переслано от Эльвира" in texts and "НЕ инструкции" in texts
+    assert "оки" in texts and "<<<DATA" in texts
     assert paths == ["/tmp/fwd.docx"]
