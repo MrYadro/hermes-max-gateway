@@ -436,8 +436,21 @@ class MaxAdapter(BasePlatformAdapter):
         if metadata and metadata.get("_interim_send") and content.startswith("⏳ Working"):
             svc["hb"] = content.strip()
             if svc.get("mid") and svc.get("tool"):
-                with contextlib.suppress(Exception):
-                    await self._client.edit_message(svc["mid"], f'{svc["hb"]}\n{svc["tool"]}')
+                if svc.get("stale"):
+                    # контент/вопрос ниже пузыря — пересоздаём под ним, старый удаляем
+                    old = svc["mid"]
+                    try:
+                        new_mid = await self._client.send_message(
+                            int(chat_id), sanitize_markdown(f'{svc["hb"]}\n{svc["tool"]}'))
+                    except Exception as exc:
+                        return SendResult(success=False, error=str(exc))
+                    with contextlib.suppress(Exception):
+                        await self._client.delete_message(old)
+                    svc.update(mid=new_mid, stale=False)
+                    logger.info("max: служебный пузырь пересоздан внизу %s → %s", old, new_mid)
+                else:
+                    with contextlib.suppress(Exception):
+                        await self._client.edit_message(svc["mid"], f'{svc["hb"]}\n{svc["tool"]}')
             return SendResult(success=True, message_id=None)
         await self._cleanup_drafts(chat_id)  # Task 12: удаляем streaming-превью
         # новый прогресс-пузырь рождается сразу с Working-строкой, не ждёт правки
@@ -732,7 +745,13 @@ class MaxAdapter(BasePlatformAdapter):
 
     # api_* обёртки, которые использует диспетчер:
     async def api_send(self, chat_id, text, attachments=None):
-        return await self._client.send_message(int(chat_id), text, attachments=attachments)
+        mid = await self._client.send_message(int(chat_id), text, attachments=attachments)
+        # вопрос/кнопки (approve/clarify/пикеры) приземлились ниже служебного
+        # пузыря — помечаем устаревшим, следующий heartbeat пересоздаст внизу
+        svc = self._svc_state.get(str(chat_id))
+        if mid and svc and svc.get("mid"):
+            svc["stale"] = True
+        return mid
 
     async def api_answer(self, callback_id, text=None):
         return await self._client.answer_callback(callback_id, text)

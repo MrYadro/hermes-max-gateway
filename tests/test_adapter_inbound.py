@@ -977,3 +977,22 @@ async def test_progress_send_born_with_working_line():
     await adapter.send("100", "⏳ Working — 9 min", metadata={"_interim_send": True})
     await adapter.send("100", '⚙️ browser_exec: "a"\n⚙️ file_read: "b"')
     assert adapter._client.sent[-1][1] == '⏳ Working — 9 min\n⚙️ file_read: "b"'
+
+
+async def test_bubble_repositions_below_interactive_question():
+    """Вопрос с кнопками (approve/clarify) уходит через api_send мимо send() —
+    пузырь всё равно помечается устаревшим и переезжает под вопрос на heartbeat."""
+    adapter = make_adapter()
+    await adapter.send("100", "⏳ Working — 9 min", metadata={"_interim_send": True})
+    res = await adapter.send("100", '⚙️ browser_exec: "ищу"')
+    m1 = res.message_id
+
+    # вопрос приземлился ниже пузыря (interactive-путь: api_send, не send)
+    await adapter.api_send("100", "⚠️ Разрешить выполнение?", [])
+    assert adapter._svc_state["100"].get("stale") is True
+
+    # heartbeat тикает — пузырь пересоздан под вопросом, старый удалён
+    await adapter.send("100", "⏳ Working — 10 min", metadata={"_interim_send": True})
+    assert m1 in adapter._client.deleted
+    assert adapter._client.sent[-1][1] == '⏳ Working — 10 min\n⚙️ browser_exec: "ищу"'
+    assert adapter._svc_state["100"].get("stale") is not True
