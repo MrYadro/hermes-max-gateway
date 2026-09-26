@@ -437,6 +437,10 @@ class MaxAdapter(BasePlatformAdapter):
         svc = self._svc_state.setdefault(str(chat_id), {})
         # heartbeat «⏳ Working» не отправляем отдельно — вживляем в служебный пузырь
         if metadata and metadata.get("_interim_send") and content.startswith("⏳ Working"):
+            if str((metadata or {}).get("thread_id") or "").strip():
+                # ветка комментариев: пузырей нет; не пишем hb в svc канала —
+                # иначе сердцебиение одной ветки прилипнет к ответам в других
+                return SendResult(success=True, message_id=None)
             svc["hb"] = content.strip()
             if svc.get("mid") and svc.get("tool"):
                 if svc.get("stale"):
@@ -456,15 +460,12 @@ class MaxAdapter(BasePlatformAdapter):
                         await self._client.edit_message(svc["mid"], f'{svc["hb"]}\n{svc["tool"]}')
             return SendResult(success=True, message_id=None)
         await self._cleanup_drafts(chat_id)  # Task 12: удаляем streaming-превью
-        # новый прогресс-пузырь рождается сразу с Working-строкой, не ждёт правки
-        tool_line = _last_tool_line(content)
-        if svc.get("hb") and tool_line:
-            content = f'{svc["hb"]}\n{tool_line}'
         last_mid: Optional[str] = None
         thread_id = str((metadata or {}).get("thread_id") or "").strip()
         if thread_id:
             # ветка комментариев канала (chat_id=канал, thread_id=пост):
-            # ответ уходит комментарием к посту — официальный механизм ядра
+            # ответ уходит комментарием к посту — официальный механизм ядра.
+            # Без hb-префикса: svc канала — общий на все ветки, утечка недопустима
             from .markdown import comment_markdown
             try:
                 for chunk in self._segment(comment_markdown(content)):
@@ -472,6 +473,10 @@ class MaxAdapter(BasePlatformAdapter):
             except MaxApiError as exc:
                 return SendResult(success=False, error=str(exc))
             return SendResult(success=True, message_id=last_mid)
+        # новый прогресс-пузырь рождается сразу с Working-строкой, не ждёт правки
+        tool_line = _last_tool_line(content)
+        if svc.get("hb") and tool_line:
+            content = f'{svc["hb"]}\n{tool_line}'
         try:
             for chunk in self._segment(sanitize_markdown(content)):
                 last_mid = await self._client.send_message(

@@ -68,15 +68,40 @@ async def test_comment_uses_official_thread_source():
 class _FC2:
     def __init__(self):
         self.commented = None
+        self.comments = []
         self.sent = []
 
     async def post_comment(self, post_id, text):
         self.commented = (post_id, text)
+        self.comments.append((post_id, text))
         return "cm.new"
 
     async def send_message(self, chat_id, text, **kw):
         self.sent.append((chat_id, text))
         return "m.1"
+
+
+async def test_comment_threads_do_not_share_service_bubble_state():
+    """Working-сердцебиение одной ветки не прилипает к ответам в других ветках канала."""
+    import pytest as _pytest
+
+    _pytest.importorskip("gateway.platforms.base")
+    from maxbot.adapter import MaxAdapter
+
+    class _Cfg:
+        extra = {}
+
+    fc = _FC2()
+    adapter = MaxAdapter(_Cfg(), client=fc, transport=None)
+    adapter._uploader = None
+    # сердцебиение из ветки mid.777 (interim): не должно запоминаться в svc канала
+    await adapter.send("500", "⏳ Working…",
+                       metadata={"_interim_send": True, "thread_id": "mid.777"})
+    # финальный ответ в ДРУГОЙ ветке mid.888, заканчивается строкой прогресса
+    await adapter.send("500", "готово\n🔧 max_channel(comments_list)",
+                       metadata={"thread_id": "mid.888"})
+    assert fc.commented == ("mid.888", "готово\n🔧 max_channel(comments_list)")
+    assert not fc.sent
 
 
 async def test_send_routes_to_comment_via_thread_metadata():
