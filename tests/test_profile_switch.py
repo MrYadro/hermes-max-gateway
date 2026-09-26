@@ -128,3 +128,100 @@ async def test_assistant_intercepts_before_group_gate(tmp_path, monkeypatch):
     monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default", "work"})
     await adapter._handle_update(_upd_text("/assistant", chat_id=88, chat_type="chat"))
     assert inter.calls == ["88"]
+
+
+class _Col:
+    def __init__(self):
+        self.events = []
+
+    async def __call__(self, e):
+        self.events.append(e)
+
+
+async def _collect_event(adapter, upd):
+    import asyncio
+
+    col = _Col()
+    adapter._message_handler = col
+    await adapter._handle_update(upd)
+    for _ in range(50):
+        if col.events:
+            break
+        await asyncio.sleep(0.01)
+    return col.events[0]
+
+
+async def test_message_stamps_source_profile(tmp_path, monkeypatch):
+    from maxbot.adapter import MaxAdapter
+
+    class _Cfg:
+        extra = {}
+
+    monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default", "work"})
+    profile_switch.set_profile(tmp_path, "500", "work")
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
+    adapter = MaxAdapter(_Cfg(), client=None, transport=None)
+    adapter._bot_user_id = 999
+    adapter._interactive = None
+    adapter._uploader = None
+    adapter.gateway_runner = _Runner()
+    ev = await _collect_event(adapter, _upd_text("привет"))
+    assert ev.source.profile == "work"
+
+
+async def test_no_stamp_without_multiplex(tmp_path, monkeypatch):
+    from maxbot.adapter import MaxAdapter
+
+    class _Cfg:
+        extra = {}
+
+    profile_switch.set_profile(tmp_path, "500", "work")
+    monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default", "work"})
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
+    adapter = MaxAdapter(_Cfg(), client=None, transport=None)
+    adapter._bot_user_id = 999
+    adapter._interactive = None
+    adapter._uploader = None
+    adapter.gateway_runner = _RunnerOff()
+    ev = await _collect_event(adapter, _upd_text("привет"))
+    assert ev.source.profile in (None, "")
+
+
+async def test_no_stamp_for_missing_profile(tmp_path, monkeypatch):
+    from maxbot.adapter import MaxAdapter
+
+    class _Cfg:
+        extra = {}
+
+    (tmp_path / "maxbot-chat-memory").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "maxbot-chat-memory" / "_chat_profiles.json").write_text(
+        '{"500": "ghost"}', encoding="utf-8")
+    monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default"})
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
+    adapter = MaxAdapter(_Cfg(), client=None, transport=None)
+    adapter._bot_user_id = 999
+    adapter._interactive = None
+    adapter._uploader = None
+    adapter.gateway_runner = _Runner()
+    ev = await _collect_event(adapter, _upd_text("привет"))
+    assert ev.source.profile in (None, "")
+
+
+async def test_group_chat_stamps_profile(tmp_path, monkeypatch):
+    """Профиль для группового чата — тот же механизм (карта по chat_id)."""
+    from maxbot.adapter import MaxAdapter
+
+    class _Cfg:
+        extra = {}
+
+    monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default", "work"})
+    profile_switch.set_profile(tmp_path, "88", "work")
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
+    adapter = MaxAdapter(_Cfg(), client=None, transport=None)
+    adapter._bot_user_id = 999
+    adapter._interactive = None
+    adapter._uploader = None
+    adapter.gateway_runner = _Runner()
+    adapter._username_re = __import__("re").compile(r"(?<![\w@])@hermes_bot\b")
+    ev = await _collect_event(adapter, _upd_text("@hermes_bot привет", chat_id=88, chat_type="chat"))
+    assert ev.source.profile == "work"

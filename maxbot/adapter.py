@@ -889,6 +889,19 @@ class MaxAdapter(BasePlatformAdapter):
         return bool(runner is not None
                     and getattr(getattr(runner, "config", None), "multiplex_profiles", False))
 
+    def build_source(self, *args, **kwargs):
+        """Штамп профиля из карты чатов (/assistant): ``source.profile`` —
+        официальный приоритет №1 маршрутизации ядра (сессия+ход уйдут в профиль).
+        Для комментариев chat_id = канал → профиль канал-wide."""
+        source = super().build_source(*args, **kwargs)
+        if not self._multiplex_on():
+            return source
+        from . import profile_switch
+        name = profile_switch.load_map(_plugin_home()).get(str(source.chat_id) or "")
+        if name and profile_switch.profile_exists(name):
+            source.profile = name
+        return source
+
     async def _assistant_command(self, chat_id: str) -> None:
         """Переключение профиля чата: пикер → карта чат→профиль → штамп source.profile."""
         from . import profile_switch
