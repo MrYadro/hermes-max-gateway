@@ -225,3 +225,134 @@ async def test_group_chat_stamps_profile(tmp_path, monkeypatch):
     adapter._username_re = __import__("re").compile(r"(?<![\w@])@hermes_bot\b")
     ev = await _collect_event(adapter, _upd_text("@hermes_bot привет", chat_id=88, chat_type="chat"))
     assert ev.source.profile == "work"
+
+
+async def test_comment_stamps_channel_wide_profile(tmp_path, monkeypatch):
+    """Комментарий наследует профиль канала (карта по chat_id канала)."""
+    from maxbot.adapter import MaxAdapter
+    from maxbot.models import parse_update
+
+    class _Cfg:
+        extra = {}
+
+    monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default", "work"})
+    profile_switch.set_profile(tmp_path, "500", "work")
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
+    adapter = MaxAdapter(_Cfg(), client=None, transport=None)
+    adapter._bot_user_id = 999
+    adapter._interactive = None
+    adapter._uploader = None
+    adapter.gateway_runner = _Runner()
+    upd = parse_update({
+        "update_type": "comment_created", "marker": 9,
+        "message": {"body": {"mid": "cm.1", "text": "Отличный пост!"},
+                    "recipient": {"chat_id": 500, "post_id": "mid.777"},
+                    "sender": {"user_id": 13, "name": "Петя"}, "timestamp": 1},
+    })
+    ev = await _collect_event(adapter, upd)
+    assert ev.source.profile == "work"
+
+
+class _RunnerAuth:
+    class config:
+        multiplex_profiles = True
+
+    def __init__(self, allowed):
+        self.allowed = allowed
+        self.checked = []
+
+    def _is_user_authorized_for_source(self, source):
+        self.checked.append(source)
+        return self.allowed
+
+
+async def test_assistant_denied_for_unauthorized_user(tmp_path, monkeypatch):
+    from maxbot.adapter import MaxAdapter
+
+    class _Cfg:
+        extra = {}
+
+    class _Interactive:
+        def __init__(self):
+            self.calls = []
+
+        async def send_choice_picker(self, *a, **kw):
+            self.calls.append(a)
+
+    class _FC:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, **kw):
+            self.sent.append(text)
+            return "m.1"
+
+    inter = _Interactive()
+    fc = _FC()
+    adapter = MaxAdapter(_Cfg(), client=fc, transport=None)
+    adapter._bot_user_id = 999
+    adapter._interactive = inter
+    adapter._uploader = None
+    runner = _RunnerAuth(False)
+    adapter.gateway_runner = runner
+    monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default", "work"})
+    await adapter._handle_update(_upd_text("/assistant"))
+    assert not inter.calls and fc.sent and "доступ" in fc.sent[0].lower()
+
+
+async def test_assistant_allowed_for_authorized_user(tmp_path, monkeypatch):
+    from maxbot.adapter import MaxAdapter
+
+    class _Cfg:
+        extra = {}
+
+    class _Interactive:
+        def __init__(self):
+            self.calls = []
+
+        async def send_choice_picker(self, *a, **kw):
+            self.calls.append(a)
+
+    inter = _Interactive()
+    adapter = MaxAdapter(_Cfg(), client=None, transport=None)
+    adapter._bot_user_id = 999
+    adapter._interactive = inter
+    adapter._uploader = None
+    adapter.gateway_runner = _RunnerAuth(True)
+    monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default", "work"})
+    await adapter._handle_update(_upd_text("/assistant"))
+    assert len(inter.calls) == 1
+
+
+class _MediaFC:
+    def __init__(self):
+        self.commented = []
+        self.sent = []
+
+    async def post_comment(self, post_id, text):
+        self.commented.append((post_id, text))
+        return "cm.x"
+
+    async def send_message(self, chat_id, text, **kw):
+        self.sent.append((chat_id, kw.get("attachments")))
+        return "m.1"
+
+
+async def test_media_in_comment_thread_rejected_with_notice():
+    """MAX-комментарии — только текст: медиа из ветки отклоняем с пояснением."""
+    import pytest as _pytest
+
+    _pytest.importorskip("gateway.platforms.base")
+    from maxbot.adapter import MaxAdapter
+
+    class _Cfg:
+        extra = {}
+
+    fc = _MediaFC()
+    adapter = MaxAdapter(_Cfg(), client=fc, transport=None)
+    adapter._uploader = None
+    res = await adapter.send_image_file(
+        "500", "/tmp/synthetic.png", caption="схема", metadata={"thread_id": "mid.777"})
+    assert res.success is False and not fc.sent
+    assert fc.commented and fc.commented[0][0] == "mid.777"
+    assert "вложени" in fc.commented[0][1].lower() or "комментари" in fc.commented[0][1].lower()

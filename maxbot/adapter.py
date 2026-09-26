@@ -663,9 +663,18 @@ class MaxAdapter(BasePlatformAdapter):
         return SendResult(success=bool(ok), message_id=real_mid if ok else None)
 
     async def _send_attachment(self, chat_id: str, path: str, kind: str,
-                               caption: Optional[str]) -> SendResult:
+                               caption: Optional[str], metadata=None) -> SendResult:
         if not self._client:
             return SendResult(success=False, error="not connected")
+        thread_id = str((metadata or {}).get("thread_id") or "").strip()
+        if thread_id:
+            # комментарии MAX — только текст: медиа из ветки не уйдёт,
+            # объясняем в ветке и возвращаем ошибку ядру
+            with contextlib.suppress(Exception):
+                await self._client.post_comment(
+                    thread_id, "ℹ️ MAX не поддерживает вложения в комментариях — "
+                               "опишу словами или спросите в ЛС бота.")
+            return SendResult(success=False, error="comments are text-only")
         # индикатор «отправляет фото/видео/аудио/файл…» перед передачей
         with contextlib.suppress(Exception):
             await self._client.chat_action(
@@ -685,6 +694,10 @@ class MaxAdapter(BasePlatformAdapter):
         """Отправить картинку по URL — фетчит сервер MAX (SSRF-безопасно)."""
         if not self._client:
             return SendResult(success=False, error="not connected")
+        thread_id = str((metadata or {}).get("thread_id") or "").strip()
+        if thread_id:
+            return await self._send_attachment(
+                chat_id, "", "image", caption, metadata=metadata)
         try:
             mid = await self._client.send_image_by_url(
                 int(chat_id), str(image_url), sanitize_markdown(caption) if caption else "")
@@ -694,19 +707,19 @@ class MaxAdapter(BasePlatformAdapter):
 
     async def send_image_file(self, chat_id, image_path, caption=None, reply_to=None,
                               metadata=None, **kwargs) -> SendResult:
-        return await self._send_attachment(chat_id, image_path, "image", caption)
+        return await self._send_attachment(chat_id, image_path, "image", caption, metadata=metadata)
 
     async def send_document(self, chat_id, file_path, caption=None, file_name=None,
                             reply_to=None, metadata=None, **kwargs) -> SendResult:
-        return await self._send_attachment(chat_id, file_path, "file", caption)
+        return await self._send_attachment(chat_id, file_path, "file", caption, metadata=metadata)
 
     async def send_voice(self, chat_id, audio_path, caption=None, reply_to=None,
                          metadata=None, **kwargs) -> SendResult:
-        return await self._send_attachment(chat_id, audio_path, "audio", caption)
+        return await self._send_attachment(chat_id, audio_path, "audio", caption, metadata=metadata)
 
     async def send_video(self, chat_id, video_path, caption=None, reply_to=None,
                          metadata=None, **kwargs) -> SendResult:
-        return await self._send_attachment(chat_id, video_path, "video", caption)
+        return await self._send_attachment(chat_id, video_path, "video", caption, metadata=metadata)
 
     # ── интерактивные кнопки: делегирование диспетчеру ──
     async def _send_exec_approval_prompt(self, prompt) -> "SendResult":
@@ -902,8 +915,9 @@ class MaxAdapter(BasePlatformAdapter):
             source.profile = name
         return source
 
-    async def _assistant_command(self, chat_id: str) -> None:
-        """Переключение профиля чата: пикер → карта чат→профиль → штамп source.profile."""
+    async def _assistant_command(self, chat_id: str, msg=None) -> None:
+        """Переключение профиля чата: пикер → карта чат→профиль → штамп source.profile.
+        Авторизация — тем же механизмом ядра, что и для обычных сообщений."""
         from . import profile_switch
         if not self._multiplex_on():
             with contextlib.suppress(Exception):
@@ -912,6 +926,23 @@ class MaxAdapter(BasePlatformAdapter):
                     "⚙️ Переключение профилей требует gateway.multiplex_profiles: true "
                     "в config.yaml и рестарт гейтвея.")
             return
+        check = getattr(getattr(self, "gateway_runner", None),
+                        "_is_user_authorized_for_source", None)
+        if callable(check) and msg is not None:
+            source = self.build_source(
+                chat_id=str(chat_id),
+                chat_type="dm" if getattr(msg, "chat_type", "") == "dialog" else "group",
+                user_id=str(msg.sender.user_id) if msg.sender else "")
+            try:
+                authorized = bool(check(source))
+            except Exception:
+                logger.debug("max: /assistant — проверка доступа упала, пропускаем",
+                             exc_info=True)
+                authorized = True
+            if not authorized:
+                with contextlib.suppress(Exception):
+                    await self._client.send_message(int(chat_id), "⛔ Нет доступа.")
+                return
         if not self._interactive:
             return
         current = profile_switch.load_map(_plugin_home()).get(str(chat_id), "default")
@@ -936,7 +967,7 @@ class MaxAdapter(BasePlatformAdapter):
         stripped = (msg.body.text or "").strip().lower().lstrip("/").split(maxsplit=1)[0] \
             if (msg.body.text or "").strip() else ""
         if stripped == "assistant":
-            await self._assistant_command(str(msg.chat_id))
+            await self._assistant_command(str(msg.chat_id), msg)
             return
         if stripped in {"geo", "contact"} and self._interactive:
             with contextlib.suppress(Exception):
