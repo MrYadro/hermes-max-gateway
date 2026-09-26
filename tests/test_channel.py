@@ -37,8 +37,8 @@ class Collector:
         self.events.append(event)
 
 
-async def test_comment_creates_post_session_and_routes_send():
-    import re
+async def test_comment_uses_official_thread_source():
+    import asyncio
 
     import pytest as _pytest
 
@@ -50,18 +50,16 @@ async def test_comment_creates_post_session_and_routes_send():
 
     adapter = MaxAdapter(_Cfg(), client=None, transport=None)
     adapter._bot_user_id = 999
-    adapter._mention_re = re.compile(r"\[([^\]]*)\]\(max://user/999\)")
     adapter._interactive = None
-    fc = _FC()
-    adapter._client = fc
+    adapter._client = _FC()
     col = Collector()
     adapter._message_handler = col
     await adapter._handle_update(_comment_update())
     for _ in range(50):
         if col.events:
             break
-        await __import__("asyncio").sleep(0.01)
-    assert col.events and col.events[0].source.chat_id == "mid.777"
+        await asyncio.sleep(0.01)
+    src = col.events[0].source
+    assert src.chat_id == "500" and src.chat_type == "channel"
+    assert src.thread_id == "mid.777" and str(src.parent_chat_id) == "500"
     assert "Петя" in col.events[0].text and "Отличный пост" in col.events[0].text
-    res = await adapter.send("mid.777", "ответ модератора")
-    assert res.success and fc.commented[0] == "mid.777"

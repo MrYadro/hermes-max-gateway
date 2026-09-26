@@ -22,7 +22,7 @@ from gateway.platforms.base import (
 from gateway.platforms.event import MessageEvent, MessageType
 
 from .interactive import InteractiveDispatcher
-from .markdown import comment_markdown, sanitize_markdown
+from .markdown import sanitize_markdown
 from .max_api import MaxApiError, MaxClient
 from .models import Attachment
 from .uploads import Uploader
@@ -294,8 +294,6 @@ class MaxAdapter(BasePlatformAdapter):
         self._greeting_mids: Dict[str, str] = {}
         # служебный пузырь над полем ввода: {"hb": "⏳ Working…", "mid": …, "tool": "⚙️ …"}
         self._svc_state: Dict[str, Dict[str, Any]] = {}
-        # post_id -> chat_id канала (сессия ветки комментариев)
-        self._comment_posts: Dict[str, int] = {}  # Task 12: streaming-превью
 
     # ── фабрики для подмены в тестах ──
     def _make_client(self) -> MaxClient:
@@ -458,14 +456,6 @@ class MaxAdapter(BasePlatformAdapter):
         if svc.get("hb") and tool_line:
             content = f'{svc["hb"]}\n{tool_line}'
         last_mid: Optional[str] = None
-        # сессия ветки комментариев канала: ответ уходит комментарием к посту
-        if str(chat_id) in self._comment_posts:
-            try:
-                for chunk in self._segment(comment_markdown(content)):
-                    last_mid = await self._client.post_comment(str(chat_id), chunk)
-            except MaxApiError as exc:
-                return SendResult(success=False, error=str(exc))
-            return SendResult(success=True, message_id=last_mid)
         try:
             for chunk in self._segment(sanitize_markdown(content)):
                 last_mid = await self._client.send_message(
@@ -765,45 +755,25 @@ class MaxAdapter(BasePlatformAdapter):
             with contextlib.suppress(Exception):
                 await self._client.delete_message(entry["message_id"])
 
-    def _remember_post_channel(self, post_id: str, channel_id: int) -> None:
-        """Реестр пост→канал: память комментариев канала — общая на весь канал."""
-        import json as _json
-        try:
-            from hermes_constants import get_hermes_home
-            d = get_hermes_home() / "maxbot-chat-memory"
-            d.mkdir(parents=True, exist_ok=True)
-            f = d / "_channel_posts.json"
-            reg = {}
-            try:
-                reg = _json.loads(f.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-            if reg.get(post_id) != channel_id:
-                reg[post_id] = channel_id
-                tmp = f.with_suffix(".tmp")
-                tmp.write_text(_json.dumps(reg, ensure_ascii=False), encoding="utf-8")
-                tmp.replace(f)
-        except Exception:
-            logger.debug("max: реестр пост→канал не обновлён", exc_info=True)
-
     async def _on_comment(self, update) -> None:
-        """Комментарий к посту канала: сессия = ветка поста (chat_id = post_id)."""
+        """Комментарий к посту канала: официальный thread-механизм ядра —
+        chat_id=канал, thread_id=пост → общая thread-сессия ветки,
+        память канала (`max-channel-<id>`) — из самого ключа сессии."""
         raw = (update.raw.get("message") or {})
         recipient = raw.get("recipient") or {}
         post_id = recipient.get("post_id")
         if not post_id:
             return
         channel_id = int(recipient.get("chat_id") or 0)
-        self._comment_posts[str(post_id)] = channel_id
-        self._remember_post_channel(str(post_id), channel_id)
         msg = update.message
         author = (msg.sender.name or f"id{msg.sender.user_id}") if msg.sender else "канал"
         text = msg.body.text or ""
         if not text.strip():
             return
-        source = self.build_source(chat_id=str(post_id), chat_name=f"канал:{channel_id}/пост:{post_id}",
-                                   chat_type="group", user_id=str(msg.sender.user_id) if msg.sender else "",
-                                   user_name=author)
+        source = self.build_source(
+            chat_id=str(channel_id), chat_name=f"канал:{channel_id}",
+            chat_type="channel", thread_id=str(post_id), parent_chat_id=str(channel_id),
+            user_id=str(msg.sender.user_id) if msg.sender else "", user_name=author)
         event = MessageEvent(text=f"[комментарий] {author}: {text}", message_type=MessageType.TEXT,
                              source=source, message_id=msg.body.mid, raw_message=raw)
         await self.handle_message(event)
