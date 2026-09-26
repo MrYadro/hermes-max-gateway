@@ -41,6 +41,28 @@ def available_profiles() -> List[str]:
     return sorted(_existing_profiles())
 
 
+def _soul_text(name: str) -> str:
+    """Текст SOUL.md профиля (default — корневой); '' если нет."""
+    try:
+        from hermes_constants import get_default_hermes_root
+        if name == "default":
+            f = Path(get_default_hermes_root()) / "SOUL.md"
+        else:
+            f = Path(get_default_hermes_root()) / "profiles" / name / "SOUL.md"
+        return f.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def profile_description(name: str) -> str:
+    """Первая содержательная строка SOUL.md (не заголовок, не fence), до 48 симв."""
+    for ln in _soul_text(name).splitlines():
+        s = ln.strip()
+        if s and not s.startswith(("#", "```", "---", ">")):
+            return s[:48].rstrip()
+    return ""
+
+
 def load_map(home: Path) -> Dict[str, str]:
     f = _store(home)
     try:

@@ -27,6 +27,19 @@ def test_available_profiles(tmp_path, monkeypatch):
     assert profile_switch.available_profiles() == ["default", "family", "work"]
 
 
+def test_profile_description_from_soul():
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(profile_switch, "_soul_text",
+                        lambda name: "# Заголовок\n\nПомощник по коду и DevOps\n\nПодробности ниже")
+    assert profile_switch.profile_description("work") == "Помощник по коду и DevOps"
+    long = "Очень длинное описание профиля, которое точно не влезет в лимит кнопки"
+    monkeypatch.setattr(profile_switch, "_soul_text", lambda name: long)
+    assert len(profile_switch.profile_description("work")) <= 48
+    monkeypatch.setattr(profile_switch, "_soul_text", lambda name: "")
+    assert profile_switch.profile_description("work") == ""
+    monkeypatch.undo()
+
+
 def _upd_text(text, chat_id=500, chat_type="dialog"):
     from maxbot.models import parse_update
     return parse_update({
@@ -69,6 +82,7 @@ async def test_assistant_command_sends_picker(tmp_path, monkeypatch):
     adapter._uploader = None
     adapter.gateway_runner = _Runner()
     monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default", "work"})
+    monkeypatch.setattr(profile_switch, "_soul_text", lambda name: "")
     await adapter._handle_update(_upd_text("/assistant"))
     assert len(inter.calls) == 1
     chat_id, title, choices, handler = inter.calls[0]
@@ -257,13 +271,96 @@ class _RunnerAuth:
     class config:
         multiplex_profiles = True
 
-    def __init__(self, allowed):
+    def __init__(self, allowed=True):
         self.allowed = allowed
         self.checked = []
 
     def _is_user_authorized_for_source(self, source):
         self.checked.append(source)
         return self.allowed
+
+
+class _InteractiveRec:
+    def __init__(self):
+        self.calls = []
+
+    async def send_choice_picker(self, chat_id, title, choices, session_key,
+                                 on_choice_selected, metadata=None):
+        self.calls.append((chat_id, title, choices, on_choice_selected))
+        return "m.pick"
+
+
+class _SendFC:
+    def __init__(self):
+        self.sent = []
+
+    async def send_message(self, chat_id, text, **kw):
+        self.sent.append(text)
+        return "m.1"
+
+
+async def test_assistant_text_form_switches_directly(tmp_path, monkeypatch):
+    from maxbot.adapter import MaxAdapter
+
+    class _Cfg:
+        extra = {}
+
+    inter = _InteractiveRec()
+    fc = _SendFC()
+    adapter = MaxAdapter(_Cfg(), client=fc, transport=None)
+    adapter._bot_user_id = 999
+    adapter._interactive = inter
+    adapter._uploader = None
+    adapter.gateway_runner = _RunnerAuth()
+    monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default", "work"})
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
+    await adapter._handle_update(_upd_text("/assistant work"))
+    assert not inter.calls  # без пикера
+    assert profile_switch.load_map(tmp_path) == {"500": "work"}
+    assert fc.sent and "work" in fc.sent[0]
+
+
+async def test_assistant_text_form_unknown_lists_profiles(tmp_path, monkeypatch):
+    from maxbot.adapter import MaxAdapter
+
+    class _Cfg:
+        extra = {}
+
+    inter = _InteractiveRec()
+    fc = _SendFC()
+    adapter = MaxAdapter(_Cfg(), client=fc, transport=None)
+    adapter._bot_user_id = 999
+    adapter._interactive = inter
+    adapter._uploader = None
+    adapter.gateway_runner = _RunnerAuth()
+    monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default", "work"})
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
+    await adapter._handle_update(_upd_text("/assistant ghost"))
+    assert not inter.calls and profile_switch.load_map(tmp_path) == {}
+    assert fc.sent and "work" in fc.sent[0]  # список доступных
+
+
+async def test_assistant_picker_shows_descriptions(tmp_path, monkeypatch):
+    from maxbot.adapter import MaxAdapter
+
+    class _Cfg:
+        extra = {}
+
+    inter = _InteractiveRec()
+    adapter = MaxAdapter(_Cfg(), client=None, transport=None)
+    adapter._bot_user_id = 999
+    adapter._interactive = inter
+    adapter._uploader = None
+    adapter.gateway_runner = _RunnerAuth()
+    monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default", "work"})
+    monkeypatch.setattr(profile_switch, "_soul_text",
+                        lambda name: "Помощник по коду и DevOps" if name == "work" else "")
+    await adapter._handle_update(_upd_text("/assistant"))
+    chat_id, title, choices, _h = inter.calls[0]
+    labels = {c["label"] for c in choices}
+    assert any(lb.startswith("work — Помощник по коду и DevOps") for lb in labels)
+    assert "default" in labels  # без описания — просто имя
+    assert "Текущий: default" in title
 
 
 async def test_assistant_denied_for_unauthorized_user(tmp_path, monkeypatch):

@@ -920,9 +920,9 @@ class MaxAdapter(BasePlatformAdapter):
             source.profile = name
         return source
 
-    async def _assistant_command(self, chat_id: str, msg=None) -> None:
-        """Переключение профиля чата: пикер → карта чат→профиль → штамп source.profile.
-        Авторизация — тем же механизмом ядра, что и для обычных сообщений."""
+    async def _assistant_command(self, chat_id: str, msg=None, arg: str = "") -> None:
+        """Переключение профиля чата: пикер или `/assistant <имя>` → карта чат→профиль
+        → штамп source.profile. Авторизация — тем же механизмом ядра."""
         from . import profile_switch
         if not self._multiplex_on():
             with contextlib.suppress(Exception):
@@ -948,20 +948,38 @@ class MaxAdapter(BasePlatformAdapter):
                 with contextlib.suppress(Exception):
                     await self._client.send_message(int(chat_id), "⛔ Нет доступа.")
                 return
+
+        def _confirm(name: str) -> str:
+            return (f"✅ Профиль «{name}» активен. Следующее сообщение начнёт новую "
+                    f"сессию с его SOUL.md, скиллами и моделью. Переключение — /assistant.")
+
+        if arg:
+            if profile_switch.profile_exists(arg):
+                profile_switch.set_profile(_plugin_home(), str(chat_id), arg)
+                with contextlib.suppress(Exception):
+                    await self._client.send_message(int(chat_id), _confirm(arg))
+            else:
+                names = ", ".join(profile_switch.available_profiles())
+                with contextlib.suppress(Exception):
+                    await self._client.send_message(
+                        int(chat_id), f"🤷 Профиля «{arg}» нет. Доступны: {names}")
+            return
         if not self._interactive:
             return
         current = profile_switch.load_map(_plugin_home()).get(str(chat_id), "default")
-        choices = [{"label": name, "value": name, "is_current": name == current}
-                   for name in profile_switch.available_profiles()]
+        choices = []
+        for name in profile_switch.available_profiles():
+            desc = profile_switch.profile_description(name)
+            choices.append({"label": f"{name} — {desc}" if desc else name,
+                            "value": name, "is_current": name == current})
 
         def _select(chat, value):
             profile_switch.set_profile(_plugin_home(), str(chat), str(value))
-            return (f"✅ Профиль «{value}» активен. Следующее сообщение начнёт новую "
-                    f"сессию с его SOUL.md, скиллами и моделью. Переключение обратно — /assistant.")
+            return _confirm(str(value))
 
         await self._interactive.send_choice_picker(
-            chat_id, "🧭 Профиль для этого чата:", choices, session_key="",
-            on_choice_selected=_select)
+            chat_id, f"🧭 Текущий: {current} — выберите профиль:", choices,
+            session_key="", on_choice_selected=_select)
 
     async def _on_message(self, msg) -> None:
         if msg.sender and msg.sender.user_id == self._bot_user_id:
@@ -972,7 +990,9 @@ class MaxAdapter(BasePlatformAdapter):
         stripped = (msg.body.text or "").strip().lower().lstrip("/").split(maxsplit=1)[0] \
             if (msg.body.text or "").strip() else ""
         if stripped == "assistant":
-            await self._assistant_command(str(msg.chat_id), msg)
+            parts = (msg.body.text or "").strip().split(maxsplit=1)
+            await self._assistant_command(str(msg.chat_id), msg,
+                                          parts[1].strip() if len(parts) > 1 else "")
             return
         if stripped in {"geo", "contact"} and self._interactive:
             with contextlib.suppress(Exception):
