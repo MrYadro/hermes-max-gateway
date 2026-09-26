@@ -81,6 +81,11 @@ def _env_or_extra(extra: dict, env: str, key: str, default: Any = None) -> Any:
     return get_scoped_secret(env, "") or extra.get(key, default)
 
 
+def _plugin_home():
+    from hermes_constants import get_hermes_home
+    return get_hermes_home()
+
+
 def _marker_file() -> Path:
     return Path(os.environ.get("HERMES_HOME") or (Path.home() / ".hermes")) / "maxbot_marker"
 
@@ -879,6 +884,36 @@ class MaxAdapter(BasePlatformAdapter):
         except Exception:
             logger.exception("max: ошибка обработки апдейта %s", update.update_type)
 
+    def _multiplex_on(self) -> bool:
+        runner = getattr(self, "gateway_runner", None)
+        return bool(runner is not None
+                    and getattr(getattr(runner, "config", None), "multiplex_profiles", False))
+
+    async def _assistant_command(self, chat_id: str) -> None:
+        """Переключение профиля чата: пикер → карта чат→профиль → штамп source.profile."""
+        from . import profile_switch
+        if not self._multiplex_on():
+            with contextlib.suppress(Exception):
+                await self._client.send_message(
+                    int(chat_id),
+                    "⚙️ Переключение профилей требует gateway.multiplex_profiles: true "
+                    "в config.yaml и рестарт гейтвея.")
+            return
+        if not self._interactive:
+            return
+        current = profile_switch.load_map(_plugin_home()).get(str(chat_id), "default")
+        choices = [{"label": name, "value": name, "is_current": name == current}
+                   for name in profile_switch.available_profiles()]
+
+        def _select(chat, value):
+            profile_switch.set_profile(_plugin_home(), str(chat), str(value))
+            return (f"✅ Профиль «{value}» активен. Следующее сообщение начнёт новую "
+                    f"сессию с его SOUL.md, скиллами и моделью. Переключение обратно — /assistant.")
+
+        await self._interactive.send_choice_picker(
+            chat_id, "🧭 Профиль для этого чата:", choices, session_key="",
+            on_choice_selected=_select)
+
     async def _on_message(self, msg) -> None:
         if msg.sender and msg.sender.user_id == self._bot_user_id:
             return  # своё сообщение
@@ -887,6 +922,9 @@ class MaxAdapter(BasePlatformAdapter):
         # /geo и /contact — локальные команды плагина: шлём request-кнопки MAX
         stripped = (msg.body.text or "").strip().lower().lstrip("/").split(maxsplit=1)[0] \
             if (msg.body.text or "").strip() else ""
+        if stripped == "assistant":
+            await self._assistant_command(str(msg.chat_id))
+            return
         if stripped in {"geo", "contact"} and self._interactive:
             with contextlib.suppress(Exception):
                 await self._interactive.send_request_buttons(
