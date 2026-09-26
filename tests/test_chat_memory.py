@@ -52,14 +52,12 @@ def test_persistence_across_restart(tmp_path):
     assert "пережить рестарт" in p2.prefetch("q", session_id=GROUP)
 
 
-def test_channel_posts_share_memory(tmp_path):
-    (tmp_path / "maxbot-chat-memory").mkdir()
-    (tmp_path / "maxbot-chat-memory" / "_channel_posts.json").write_text(
-        '{"mid.777": 500, "mid.888": 500}', encoding="utf-8")
+def test_channel_threads_share_memory_via_session_key(tmp_path):
     p = make(tmp_path)
     p.handle_tool_call("chat_memory_save", {"text": "правило канала: без спама"},
-                       session_id="agent:main:max:group:mid.777")
-    assert "без спама" in p.prefetch("q", session_id="agent:main:max:group:mid.888")
+                       session_id="agent:main:max:channel:500:mid.777")
+    assert "без спама" in p.prefetch("q", session_id="agent:main:max:channel:500:mid.888")
+    assert "без спама" not in p.prefetch("q", session_id=DM)
 
 
 def test_uuid_session_resolves_via_index(tmp_path):

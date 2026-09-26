@@ -111,6 +111,22 @@ async def test_group_requires_mention():
     assert len(col.events) == 1 and col.events[0].text == "посчитай 2+2"
 
 
+async def test_group_and_dm_session_keys_unchanged():
+    """Официальные thread-ключи комментариев не меняют ключи групп/ЛС."""
+    import asyncio
+
+    adapter = make_adapter()
+    adapter._username_re = __import__("re").compile(r"(?<![\w@])@hermes_bot\b")
+    col = Collector()
+    adapter._message_handler = col
+    await adapter._handle_update(_upd_message(text="привет", chat_type="dialog", chat_id=77))
+    await adapter._handle_update(
+        _upd_message(text="@hermes_bot привет", chat_type="chat", chat_id=88, sender_id=1))
+    await asyncio.sleep(0.05)
+    keys = [adapter._event_session_key(e) for e in col.events]
+    assert any(":dm:77" in k for k in keys) and any(":group:88" in k for k in keys)
+
+
 async def test_group_reply_to_bot_passes():
     adapter = make_adapter()
     col = Collector()

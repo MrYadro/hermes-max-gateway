@@ -16,7 +16,7 @@ from agent.memory_provider import MemoryProvider, RecallStatus, is_trivial_promp
 
 logger = logging.getLogger(__name__)
 
-_SESSION_CHAT_RE = re.compile(r":max:(dm|group):(?:chat:)?([A-Za-z0-9_.\-]+)")
+_SESSION_CHAT_RE = re.compile(r":max:(dm|group|channel):(?:chat:)?([A-Za-z0-9_.\-]+)")
 _BUILTIN_CAP = 2600  # символ на глобальный блок для DM
 
 
@@ -73,14 +73,6 @@ class ChatMemoryProvider(MemoryProvider):
         self._idx_cache = (mtime, idx)
         return idx
 
-    def _channel_of_post(self, post_id: str) -> Optional[int]:
-        try:
-            reg = json.loads((self._home / "maxbot-chat-memory" / "_channel_posts.json")
-                             .read_text(encoding="utf-8"))
-            return int(reg[post_id])
-        except Exception:
-            return None
-
     def _bind(self, session_id: str, *, flush: bool = False) -> None:
         sid = session_id or ""
         m = _SESSION_CHAT_RE.search(sid)
@@ -88,10 +80,8 @@ class ChatMemoryProvider(MemoryProvider):
             # провайдеру приходит UUID сессии — резолвим чат через индекс сессий
             m = _SESSION_CHAT_RE.search(self._sid_index().get(sid, ""))
         key = f"max-{m.group(1)}-{m.group(2)}" if m else _safe_key(sid or "default")
-        # ветки комментариев одного канала — ОБЩАЯ память канала
-        if m and m.group(1) == "group" and self._home:
-            if (ch := self._channel_of_post(m.group(2))) is not None:
-                key = f"max-channel-{ch}"
+        # channel-ключи (chat_id=канал, thread_id=пост) дают ОБЩУЮ память канала
+        # из самого ключа сессии — реестр пост→канал не нужен
         if key != self._key:
             self._save()
             self._key = key
