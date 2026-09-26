@@ -456,6 +456,17 @@ class MaxAdapter(BasePlatformAdapter):
         if svc.get("hb") and tool_line:
             content = f'{svc["hb"]}\n{tool_line}'
         last_mid: Optional[str] = None
+        thread_id = str((metadata or {}).get("thread_id") or "").strip()
+        if thread_id:
+            # ветка комментариев канала (chat_id=канал, thread_id=пост):
+            # ответ уходит комментарием к посту — официальный механизм ядра
+            from .markdown import comment_markdown
+            try:
+                for chunk in self._segment(comment_markdown(content)):
+                    last_mid = await self._client.post_comment(thread_id, chunk)
+            except MaxApiError as exc:
+                return SendResult(success=False, error=str(exc))
+            return SendResult(success=True, message_id=last_mid)
         try:
             for chunk in self._segment(sanitize_markdown(content)):
                 last_mid = await self._client.send_message(
