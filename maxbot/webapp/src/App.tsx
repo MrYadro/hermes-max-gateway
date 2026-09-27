@@ -107,17 +107,21 @@ export default function App() {
     const current = profileOf(chatId);
     return (
       <CellList mode="island">
-        {state.profiles.map((p) => (
-          <CellSimple
-            key={p.name}
-            before={<ProfileAvatar name={p.name} size={44} />}
-            title={p.name}
-            subtitle={p.description || undefined}
-            after={p.name === current ? <Check size={20} strokeWidth={2} /> : undefined}
-            disabled={busy}
-            onClick={() => p.name !== current && pick(chatId, p.name)}
-          />
-        ))}
+        {state.profiles.map((p) => {
+          const isCurrent = p.name === current;
+          return (
+            <CellSimple
+              key={p.name}
+              showChevron={!isCurrent}
+              before={<ProfileAvatar name={p.name} size={44} />}
+              title={p.name}
+              subtitle={p.description || undefined}
+              after={isCurrent ? <Check size={20} strokeWidth={2} /> : undefined}
+              disabled={busy}
+              onClick={() => !isCurrent && pick(chatId, p.name)}
+            />
+          );
+        })}
       </CellList>
     );
   };
