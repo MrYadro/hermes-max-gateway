@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
-  Bot,
   Compass,
   LayoutGrid,
   Megaphone,
@@ -47,17 +46,6 @@ function ProfileAvatar({ name, size = 40 }: { name: string; size?: number }) {
   return (
     <Avatar.Container size={size} form="squircle">
       <Avatar.Text gradient={gradientOf(name)}>{name.slice(0, 1).toUpperCase()}</Avatar.Text>
-    </Avatar.Container>
-  );
-}
-
-function ChatAvatar({ chatId, type, size = 40 }: { chatId: string; type: string; size?: number }) {
-  const { Icon } = TYPE_META[type] ?? TYPE_META.unknown;
-  return (
-    <Avatar.Container size={size} form="squircle">
-      <Avatar.Text gradient={gradientOf(chatId)}>
-        <Icon size={size * 0.5} strokeWidth={2} />
-      </Avatar.Text>
     </Avatar.Container>
   );
 }
@@ -108,20 +96,10 @@ export default function App() {
   const typeOf = (chatId: string) =>
     state.chats.find((c) => c.chat_id === chatId)?.chat_type ?? here?.type ?? "unknown";
 
-  const ProfilePicker = ({ chatId, type }: { chatId: string; type: string }) => {
+  const ProfilePicker = ({ chatId }: { chatId: string }) => {
     const current = profileOf(chatId);
     return (
       <>
-        <CellSimple
-          before={<ChatAvatar chatId={chatId} type={type} />}
-          title="Ассистент"
-          after={
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <Typography.Label>{current}</Typography.Label>
-              <ProfileAvatar name={current} size={24} />
-            </span>
-          }
-        />
         {state!.profiles.map((p) => (
           <CellAction
             key={p.name}
@@ -152,7 +130,7 @@ export default function App() {
           </CellHeader>
         }
       >
-        <ProfilePicker chatId={chatId} type={type} />
+        <ProfilePicker chatId={chatId} />
       </CellList>
     );
   };
@@ -160,18 +138,6 @@ export default function App() {
   return (
     <Panel mode="secondary">
       <Container>
-        <CellHeader
-          titleStyle="caps"
-          fullWidth
-          after={
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <Bot size={16} strokeWidth={2} />
-              <Typography.Label>{state.profiles.length} ассистент(ов)</Typography.Label>
-            </span>
-          }
-        >
-          Assistants
-        </CellHeader>
 
         {view === "current" && here ? (
           <>
