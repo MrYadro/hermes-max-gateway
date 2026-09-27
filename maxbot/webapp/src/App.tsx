@@ -180,7 +180,7 @@ export default function App() {
                         height="compact"
                         showChevron
                         before={<ProfileAvatar name={c.profile} size={36} />}
-                        title={<EllipsisText maxLines={1}>{c.chat_id}</EllipsisText>}
+                        title={<EllipsisText maxLines={1}>{c.title || c.chat_id}</EllipsisText>}
                         subtitle={<EllipsisText maxLines={1}>{meta.label}</EllipsisText>}
                         after={
                           <Typography.Body variant="small" style={{ whiteSpace: "nowrap" }}>

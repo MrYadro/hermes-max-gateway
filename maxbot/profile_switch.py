@@ -7,7 +7,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +115,8 @@ def known_chats(home: Path) -> Dict[str, Dict[str, str]]:
         return dict(cached[1])
     try:
         data = json.loads(f.read_text(encoding="utf-8"))
-        data = {str(k): {"type": str(v.get("type") or "unknown")}
+        data = {str(k): {"type": str(v.get("type") or "unknown"),
+                         **({"title": str(v["title"])} if v.get("title") else {})}
                 for k, v in data.items() if isinstance(v, dict)}
     except Exception:
         data = {}
@@ -123,12 +124,19 @@ def known_chats(home: Path) -> Dict[str, Dict[str, str]]:
     return dict(data)
 
 
-def remember_chat(home: Path, chat_key: str, chat_type: str) -> None:
+def remember_chat(home: Path, chat_key: str, chat_type: str,
+                  title: Optional[str] = None) -> None:
+    """Зарегистрировать чат; ``title=None`` сохраняет существующее название."""
     chat_type = chat_type if chat_type in {"dm", "group", "channel"} else "unknown"
     f = _known_store(home)
     f.parent.mkdir(parents=True, exist_ok=True)
     data = known_chats(home)
-    data[str(chat_key)] = {"type": chat_type}
+    entry = {"type": chat_type}
+    if title is not None:
+        title = str(title).strip()
+    if title or (chat_key in data and data[chat_key].get("title") and title is None):
+        entry["title"] = title if title is not None else data[chat_key]["title"]
+    data[str(chat_key)] = entry
     tmp = f.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     tmp.replace(f)

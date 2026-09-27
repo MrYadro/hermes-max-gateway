@@ -1,6 +1,7 @@
 export interface ChatEntry {
   chat_id: string;
   chat_type: "dm" | "group" | "channel" | "unknown";
+  title: string;
   profile: string;
 }
 export interface ProfileEntry {

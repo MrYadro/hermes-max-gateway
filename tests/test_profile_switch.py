@@ -545,6 +545,17 @@ def test_known_chats_roundtrip(tmp_path):
         "500": {"type": "channel"}, "88": {"type": "group"}}
 
 
+def test_known_chats_title(tmp_path):
+    # title пишется и переживает перерегистрацию типа без title
+    profile_switch.remember_chat(tmp_path, "88", "group", title="Тестовый чат")
+    assert profile_switch.known_chats(tmp_path)["88"] == {"type": "group", "title": "Тестовый чат"}
+    profile_switch.remember_chat(tmp_path, "88", "group")
+    assert profile_switch.known_chats(tmp_path)["88"]["title"] == "Тестовый чат"
+    # явный title перезаписывает
+    profile_switch.remember_chat(tmp_path, "88", "group", title="Новое имя")
+    assert profile_switch.known_chats(tmp_path)["88"]["title"] == "Новое имя"
+
+
 def test_known_chats_type_overwrite(tmp_path):
     profile_switch.remember_chat(tmp_path, "500", "group")
     profile_switch.remember_chat(tmp_path, "500", "channel")
@@ -558,8 +569,12 @@ async def test_message_and_comment_remember_chat(tmp_path, monkeypatch):
     class _Cfg:
         extra = {}
 
+    class _FC:
+        async def get_chat(self, chat_id):
+            return {"chat_id": chat_id, "title": "Тестовый канал", "type": "channel"}
+
     monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
-    adapter = MaxAdapter(_Cfg(), client=None, transport=None)
+    adapter = MaxAdapter(_Cfg(), client=_FC(), transport=None)
     adapter._bot_user_id = 999
     adapter._interactive = None
     adapter._uploader = None
@@ -575,7 +590,14 @@ async def test_message_and_comment_remember_chat(tmp_path, monkeypatch):
     }))
     assert ev is not None
     known = profile_switch.known_chats(tmp_path)
-    assert known.get("77") == {"type": "dm"} and known.get("500") == {"type": "channel"}
+    assert known.get("77") == {"type": "dm", "title": "Петя"}
+    import asyncio
+    for _ in range(50):
+        if known.get("500", {}).get("title"):
+            break
+        await asyncio.sleep(0.01)
+        known = profile_switch.known_chats(tmp_path)
+    assert known.get("500", {}).get("title") == "Тестовый канал"
 
 
 async def test_media_in_comment_thread_rejected_with_notice():

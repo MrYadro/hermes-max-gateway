@@ -104,7 +104,8 @@ def _state_payload(user_id: int) -> Dict[str, Any]:
     for key in chats_map:
         merged.setdefault(key, {"type": "unknown"})
     chats = [{"chat_id": k, "chat_type": v.get("type", "unknown"),
-              "profile": chats_map.get(k, "default")} for k, v in sorted(merged.items())]
+              "title": v.get("title", ""), "profile": chats_map.get(k, "default")}
+             for k, v in sorted(merged.items())]
     profiles = [{"name": n, "description": profile_switch.profile_description(n)}
                 for n in profile_switch.available_profiles()]
     return {"chats": chats, "profiles": profiles,

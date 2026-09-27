@@ -1,4 +1,5 @@
 """Адаптер платформы MAX для гейтвея Hermes Agent."""
+import asyncio
 import contextlib
 import hashlib
 import logging
@@ -809,6 +810,7 @@ class MaxAdapter(BasePlatformAdapter):
         with contextlib.suppress(Exception):
             from .profile_switch import remember_chat
             remember_chat(_plugin_home(), str(channel_id), "channel")
+            asyncio.create_task(self._refresh_chat_title(channel_id, "channel"))
         msg = update.message
         author = (msg.sender.name or f"id{msg.sender.user_id}") if msg.sender else "канал"
         text = msg.body.text or ""
@@ -821,6 +823,15 @@ class MaxAdapter(BasePlatformAdapter):
         event = MessageEvent(text=f"[комментарий] {author}: {text}", message_type=MessageType.TEXT,
                              source=source, message_id=msg.body.mid, raw_message=raw)
         await self.handle_message(event)
+
+    async def _refresh_chat_title(self, chat_id: int, chat_type: str) -> None:
+        """Название группы/канала для UI переключалки (fire-and-forget)."""
+        with contextlib.suppress(Exception):
+            from .profile_switch import remember_chat
+            data = await self._client.get_chat(int(chat_id))
+            title = (data or {}).get("title")
+            if title:
+                remember_chat(_plugin_home(), str(chat_id), chat_type, title=str(title))
 
     def _purge_chat_state(self, chat_id: str) -> None:
         """bot_removed/dialog_removed: чистим кэши чата."""
@@ -1027,7 +1038,10 @@ class MaxAdapter(BasePlatformAdapter):
         chat_type = "dm" if msg.chat_type == "dialog" else "group"
         with contextlib.suppress(Exception):
             from .profile_switch import remember_chat
-            remember_chat(_plugin_home(), str(msg.chat_id), chat_type)
+            remember_chat(_plugin_home(), str(msg.chat_id), chat_type,
+                          title=(msg.sender.name or None) if chat_type == "dm" and msg.sender else None)
+            if chat_type == "group":
+                asyncio.create_task(self._refresh_chat_title(int(msg.chat_id), "group"))
         text = _fix_dashed_command(msg.body.text or "")
         if chat_type == "group":
             passed, text = await self._group_gate(msg, text)
