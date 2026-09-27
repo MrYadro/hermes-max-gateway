@@ -130,6 +130,7 @@ export default function App() {
       <CellAction
         mode="secondary"
         height="compact"
+        showChevron
         before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />}
         onClick={() => openChat(chatId)}
       >
@@ -149,6 +150,7 @@ export default function App() {
               <CellAction
                 mode="secondary"
                 height="compact"
+                showChevron
                 before={<Compass size={ICON_SIZE} strokeWidth={2} />}
                 onClick={() => setView("chats")}
               >
@@ -184,6 +186,7 @@ export default function App() {
               <CellAction
                 mode="secondary"
                 height="compact"
+                showChevron
                 before={<Compass size={ICON_SIZE} strokeWidth={2} />}
                 onClick={() => setView("profiles")}
               >
@@ -208,6 +211,7 @@ export default function App() {
               <CellAction
                 mode="secondary"
                 height="compact"
+                showChevron
                 before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />}
                 onClick={() => setView("chats")}
               >
