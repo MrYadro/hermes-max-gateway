@@ -127,16 +127,20 @@ async def _handle_set(request):
     return web.json_response({"ok": True, "state": _state_payload(uid)})
 
 
+def _dist_dir() -> Path:
+    return Path(__file__).parent / "webapp" / "dist"
+
+
 async def _handle_static(request):
     from aiohttp import web
 
-    dist = Path(__file__).parent / "webapp" / "dist"
+    dist = _dist_dir()
     tail = request.match_info.get("tail", "")
     if not tail:
         f = dist / "index.html"
     else:
         f = (dist / tail).resolve()
-        if not str(f).startswith(str(dist.resolve())):
+        if not f.is_relative_to(dist.resolve()):
             return web.json_response({"error": "not found"}, status=404)
     if not f.is_file():
         return web.json_response({"error": "not found"}, status=404)

@@ -4,7 +4,6 @@ import hmac
 import json
 import time
 import urllib.parse
-from pathlib import Path
 
 import pytest
 
@@ -192,13 +191,16 @@ async def test_non_admin_gets_403_and_dev_off(tmp_path, monkeypatch):
 
 async def test_static_index_and_traversal(tmp_path, monkeypatch):
     wa = _mk_handler_env(monkeypatch, tmp_path)
-    dist = Path(wa.__file__).parent / "webapp" / "dist"
-    dist.mkdir(parents=True, exist_ok=True)
+    dist = tmp_path / "dist"
+    dist.mkdir(parents=True)
+    monkeypatch.setattr(wa, "_dist_dir", lambda: dist)
     (dist / "index.html").write_text("<html>app</html>", encoding="utf-8")
-    (dist / "assets").mkdir(exist_ok=True)
+    (dist / "assets").mkdir()
     (dist / "assets" / "app.js").write_text("//bundle", encoding="utf-8")
-    secret_file = dist.parent / "secret.txt"
+    secret_file = tmp_path / "secret.txt"
     secret_file.write_text("s3cret", encoding="utf-8")
+    leak_file = tmp_path / "dist_leak.txt"
+    leak_file.write_text("leak", encoding="utf-8")
     import aiohttp
 
     server = await _serve(wa)
@@ -208,11 +210,16 @@ async def test_static_index_and_traversal(tmp_path, monkeypatch):
                 assert r.status == 200 and "app" in await r.text()
             async with http.get(server.make_url("/max/app/assets/app.js")) as r:
                 assert r.status == 200
+            # закодированный %2F доходит до хендлера (yarl не нормализует),
+            # закрыт защитой → JSON 404 именно от хендлера
             async with http.get(server.make_url(
-                    "/max/app/../secret.txt")) as r:
-                assert r.status in (400, 404)
+                    "/max/app/..%2Fsecret.txt")) as r:
+                assert r.status == 404
+                assert await r.json() == {"error": "not found"}
+            # сиблинг с общим префиксом имени (prefix-обход startswith)
+            async with http.get(server.make_url(
+                    "/max/app/..%2Fdist_leak.txt")) as r:
+                assert r.status == 404
+                assert await r.json() == {"error": "not found"}
     finally:
         await server.close()
-        secret_file.unlink(missing_ok=True)
-        (dist / "assets" / "app.js").unlink(missing_ok=True)
-        (dist / "index.html").unlink(missing_ok=True)
