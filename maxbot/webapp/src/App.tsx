@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Check,
   Megaphone,
@@ -122,10 +122,10 @@ export default function App() {
     state.chats.find((c) => c.chat_id === chatId)?.chat_type ?? here?.type ?? "unknown";
 
   /** Экран текущего чата: чистый выбор профиля — аватар, имя, серое описание */
-  const ProfilePicker = ({ chatId }: { chatId: string }) => {
+  const ProfilePicker = ({ chatId, header }: { chatId: string; header?: ReactNode }) => {
     const current = profileOf(chatId);
     return (
-      <CellList mode="island">
+      <CellList mode="island" header={header}>
         {state.profiles.map((p) => {
           const isCurrent = p.name === current;
           return (
@@ -156,12 +156,16 @@ export default function App() {
         <Flex direction="column" gap={16}>
           {view === "chat" && focus ? (
             <>
-              {here && focus !== here.id && (
-                <CellHeader titleStyle="caps" fullWidth>
-                  {state.chats.find((c) => c.chat_id === focus)?.title || focus}
-                </CellHeader>
-              )}
-              <ProfilePicker chatId={focus} />
+              <ProfilePicker
+                chatId={focus}
+                header={
+                  here && focus !== here.id ? (
+                    <CellHeader>
+                      {state.chats.find((c) => c.chat_id === focus)?.title || focus}
+                    </CellHeader>
+                  ) : undefined
+                }
+              />
               <CellList mode="island">
                 <CellSimple
                   showChevron
