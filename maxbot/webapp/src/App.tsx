@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
 import {
+  ArrowLeft,
+  Bot,
+  Compass,
+  LayoutGrid,
+  Megaphone,
+  MessageCircle,
+  User,
+  Users,
+} from "lucide-react";
+import {
   Avatar,
   CellAction,
   CellHeader,
@@ -12,11 +22,15 @@ import {
 } from "@maxhub/max-ui";
 import { api, CurrentChat, currentChat, StateResponse } from "./api";
 
-const TYPE_META: Record<string, { icon: string; label: string }> = {
-  dm: { icon: "👤", label: "Личный чат" },
-  group: { icon: "👥", label: "Группа" },
-  channel: { icon: "📢", label: "Канал" },
-  unknown: { icon: "💬", label: "Чат" },
+type ChatType = "dm" | "group" | "channel" | "unknown";
+
+const ICON_SIZE = 20;
+
+const TYPE_META: Record<string, { Icon: typeof User; label: string }> = {
+  dm: { Icon: User, label: "Личный чат" },
+  group: { Icon: Users, label: "Группа" },
+  channel: { Icon: Megaphone, label: "Канал" },
+  unknown: { Icon: MessageCircle, label: "Чат" },
 };
 
 const GRADIENTS = ["red", "orange", "green", "blue", "purple"] as const;
@@ -38,10 +52,12 @@ function ProfileAvatar({ name, size = 40 }: { name: string; size?: number }) {
 }
 
 function ChatAvatar({ chatId, type, size = 40 }: { chatId: string; type: string; size?: number }) {
-  const icon = (TYPE_META[type] ?? TYPE_META.unknown).icon;
+  const { Icon } = TYPE_META[type] ?? TYPE_META.unknown;
   return (
     <Avatar.Container size={size} form="squircle">
-      <Avatar.Text gradient={gradientOf(chatId)}>{icon}</Avatar.Text>
+      <Avatar.Text gradient={gradientOf(chatId)}>
+        <Icon size={size * 0.5} strokeWidth={2} />
+      </Avatar.Text>
     </Avatar.Container>
   );
 }
@@ -129,7 +145,10 @@ export default function App() {
         mode="island"
         header={
           <CellHeader after={<Typography.Label>{meta.label}</Typography.Label>}>
-            {meta.icon} {chatId}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <meta.Icon size={ICON_SIZE} strokeWidth={2} />
+              {chatId}
+            </span>
           </CellHeader>
         }
       >
@@ -145,9 +164,10 @@ export default function App() {
           titleStyle="caps"
           fullWidth
           after={
-            <Typography.Label>
-              {state.profiles.length} ассистент(ов)
-            </Typography.Label>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <Bot size={16} strokeWidth={2} />
+              <Typography.Label>{state.profiles.length} ассистент(ов)</Typography.Label>
+            </span>
           }
         >
           Assistants
@@ -157,10 +177,10 @@ export default function App() {
           <>
             <ChatIsland chatId={here.id} type={typeOf(here.id)} />
             <CellList mode="island">
-              <CellAction before={<span>🗂</span>} onClick={() => setView("chats")}>
+              <CellAction before={<LayoutGrid size={ICON_SIZE} strokeWidth={2} />} onClick={() => setView("chats")}>
                 Все чаты
               </CellAction>
-              <CellAction before={<span>🧭</span>} onClick={() => setView("profiles")}>
+              <CellAction before={<Compass size={ICON_SIZE} strokeWidth={2} />} onClick={() => setView("profiles")}>
                 Все профили
               </CellAction>
             </CellList>
@@ -169,7 +189,7 @@ export default function App() {
           <>
             {here && (
               <CellList mode="island">
-                <CellAction before={<span>⬅️</span>} onClick={() => setView("current")}>
+                <CellAction before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />} onClick={() => setView("current")}>
                   Этот чат ({here.id})
                 </CellAction>
               </CellList>
@@ -186,7 +206,7 @@ export default function App() {
           <>
             {here && (
               <CellList mode="island">
-                <CellAction before={<span>⬅️</span>} onClick={() => setView("current")}>
+                <CellAction before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />} onClick={() => setView("current")}>
                   Этот чат ({here.id})
                 </CellAction>
               </CellList>
