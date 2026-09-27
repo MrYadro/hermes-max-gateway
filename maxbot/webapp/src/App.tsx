@@ -1,8 +1,22 @@
 import { useEffect, useState } from "react";
-import { Button, CellList, CellSimple, Panel, Spinner, Typography } from "@maxhub/max-ui";
+import {
+  CellAction,
+  CellHeader,
+  CellList,
+  CellSimple,
+  Container,
+  Panel,
+  Spinner,
+  Typography,
+} from "@maxhub/max-ui";
 import { api, StateResponse } from "./api";
 
-const TYPE_ICONS: Record<string, string> = { dm: "👤", group: "👥", channel: "📢", unknown: "💬" };
+const TYPE_META: Record<string, { icon: string; label: string }> = {
+  dm: { icon: "👤", label: "Личный чат" },
+  group: { icon: "👥", label: "Группа" },
+  channel: { icon: "📢", label: "Канал" },
+  unknown: { icon: "💬", label: "Чат" },
+};
 
 export default function App() {
   const [state, setState] = useState<StateResponse | null>(null);
@@ -30,13 +44,9 @@ export default function App() {
 
   if (error) {
     return (
-      <Panel mode="secondary">
+      <Panel mode="secondary" centeredX centeredY>
         <Typography.Body>{error}</Typography.Body>
-        <Button
-          onClick={() => { setError(""); load(); }}
-        >
-          Повторить
-        </Button>
+        <CellAction onClick={() => { setError(""); load(); }}>Повторить</CellAction>
       </Panel>
     );
   }
@@ -50,59 +60,95 @@ export default function App() {
 
   return (
     <Panel mode="secondary">
-      <Typography.Title>Assistants</Typography.Title>
-      <CellList>
-        <CellSimple
-          title="Чаты"
-          after={tab === "chats" ? "•" : undefined}
-          onClick={() => setTab("chats")}
-        />
-        <CellSimple
-          title="Профили"
-          after={tab === "profiles" ? "•" : undefined}
-          onClick={() => setTab("profiles")}
-        />
-      </CellList>
-      {tab === "chats" ? (
-        state.chats.length === 0 ? (
-          <Typography.Body>Чатов пока нет — напишите боту.</Typography.Body>
-        ) : (
-          <CellList header="Чаты">
-            {state.chats.map((c) => (
-              <div key={c.chat_id}>
-                <CellSimple
-                  title={`${TYPE_ICONS[c.chat_type] ?? "💬"} ${c.chat_id}`}
-                  after={c.profile}
-                  showChevron
-                  separator={open !== c.chat_id}
-                  onClick={() => setOpen(open === c.chat_id ? null : c.chat_id)}
-                />
-                {open === c.chat_id && (
-                  <CellList mode="island" header="Профиль ассистента">
-                    {state.profiles.map((p) => (
-                      <Button
+      <Container>
+        <CellHeader
+          titleStyle="caps"
+          fullWidth
+          after={
+            <Typography.Label>
+              {state.profiles.length} ассистент(ов)
+            </Typography.Label>
+          }
+        >
+          Assistants
+        </CellHeader>
+
+        <CellList mode="island">
+          <CellAction
+            before={<span>💬</span>}
+            showChevron={false}
+            mode={tab === "chats" ? "primary" : "secondary"}
+            onClick={() => setTab("chats")}
+          >
+            Чаты
+          </CellAction>
+          <CellAction
+            before={<span>🧭</span>}
+            showChevron={false}
+            mode={tab === "profiles" ? "primary" : "secondary"}
+            onClick={() => setTab("profiles")}
+          >
+            Профили
+          </CellAction>
+        </CellList>
+
+        {tab === "chats" ? (
+          state.chats.length === 0 ? (
+            <Typography.Body>Чатов пока нет — напишите боту.</Typography.Body>
+          ) : (
+            state.chats.map((c) => {
+              const meta = TYPE_META[c.chat_type] ?? TYPE_META.unknown;
+              const expanded = open === c.chat_id;
+              return (
+                <CellList
+                  key={c.chat_id}
+                  mode="island"
+                  header={
+                    <CellHeader after={<Typography.Label>{meta.label}</Typography.Label>}>
+                      {meta.icon} {c.chat_id}
+                    </CellHeader>
+                  }
+                >
+                  <CellSimple
+                    title="Ассистент"
+                    after={<Typography.Label>{c.profile}</Typography.Label>}
+                    showChevron
+                    separator={!expanded}
+                    onClick={() => setOpen(expanded ? null : c.chat_id)}
+                  />
+                  {expanded &&
+                    state.profiles.map((p) => (
+                      <CellAction
                         key={p.name}
-                        stretched
-                        disabled={busy}
-                        variant={p.name === c.profile ? "primary" : "secondary"}
+                        before={p.name === c.profile ? <span>✓</span> : <span>•</span>}
+                        showChevron={false}
+                        disabled={busy || p.name === c.profile}
                         onClick={() => pick(c.chat_id, p.name)}
                       >
-                        {p.name === c.profile ? `✓ ${p.name}` : p.name}
-                      </Button>
+                        {p.name}
+                        {p.description ? ` — ${p.description}` : ""}
+                      </CellAction>
                     ))}
-                  </CellList>
-                )}
-              </div>
+                </CellList>
+              );
+            })
+          )
+        ) : (
+          <CellList
+            mode="island"
+            header={<CellHeader>Профили</CellHeader>}
+          >
+            {state.profiles.map((p) => (
+              <CellSimple
+                key={p.name}
+                title={p.name}
+                subtitle={p.description || "—"}
+                after={p.name === "default" ? <Typography.Label>базовый</Typography.Label> : undefined}
+              />
             ))}
           </CellList>
-        )
-      ) : (
-        <CellList header="Профили">
-          {state.profiles.map((p) => (
-            <CellSimple key={p.name} title={p.name} subtitle={p.description || "—"} />
-          ))}
-        </CellList>
-      )}
+        )}
+      </Container>
     </Panel>
   );
 }
