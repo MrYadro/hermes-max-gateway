@@ -15,12 +15,35 @@ export interface StateResponse {
 
 declare global {
   interface Window {
-    WebApp?: { initData?: string };
+    WebApp?: {
+      initData?: string;
+      initDataUnsafe?: {
+        chat?: { id: number; type: "DIALOG" | "CHAT" | "CHANNEL" };
+      };
+    };
   }
 }
 
 function devUserId(): string | null {
   return new URLSearchParams(window.location.search).get("dev_user_id");
+}
+
+export interface CurrentChat {
+  id: string;
+  type: "dm" | "group" | "channel";
+}
+
+/** Чат, из которого открыли мини-апп (из подписанного initData); в dev — ?dev_chat_id= */
+export function currentChat(): CurrentChat | null {
+  const dev = new URLSearchParams(window.location.search).get("dev_chat_id");
+  if (dev) {
+    const devType = new URLSearchParams(window.location.search).get("dev_chat_type");
+    return { id: dev, type: (devType as CurrentChat["type"]) || "dm" };
+  }
+  const chat = window.WebApp?.initDataUnsafe?.chat;
+  if (!chat?.id) return null;
+  const type = chat.type === "CHANNEL" ? "channel" : chat.type === "CHAT" ? "group" : "dm";
+  return { id: String(chat.id), type };
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
