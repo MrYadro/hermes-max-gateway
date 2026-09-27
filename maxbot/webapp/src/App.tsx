@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   Check,
-  Compass,
   Megaphone,
   MessageCircle,
+  Settings,
   User,
   Users,
 } from "lucide-react";
@@ -146,17 +146,17 @@ export default function App() {
           <>
             {here && focus !== here.id && <NavRow chatId={here.id} />}
             <ProfilePicker chatId={focus} />
-            <CellList mode="island">
-              <CellAction
-                mode="secondary"
-                height="compact"
-                showChevron
-                before={<Compass size={ICON_SIZE} strokeWidth={2} />}
-                onClick={() => setView("chats")}
-              >
-                Все чаты
-              </CellAction>
-            </CellList>
+            <div style={{ marginTop: 16 }}>
+              <CellList mode="island">
+                <CellSimple
+                  showChevron
+                  before={<Settings size={ICON_SIZE} strokeWidth={2} />}
+                  title="Настройки"
+                  subtitle="Все чаты и их ассистенты"
+                  onClick={() => setView("chats")}
+                />
+              </CellList>
+            </div>
           </>
         ) : (
           <>
