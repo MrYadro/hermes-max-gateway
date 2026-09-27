@@ -5,5 +5,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 dist/
+!maxbot/webapp/dist/
 .superpowers/
 maxbot.egg-info/
+maxbot/webapp/node_modules/
