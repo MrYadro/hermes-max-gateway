@@ -375,12 +375,18 @@ class MaxAdapter(BasePlatformAdapter):
                     await self.disconnect()
                     return False
                 from .transports import WebhookTransport
+                try:
+                    from .webapp_api import build_routes
+                    extra = {"extra_routes": build_routes(self)}
+                except Exception:
+                    extra = {}
                 self._transport = self._transport or WebhookTransport(
                     self._client, url=url,
                     port=int(_env_or_extra(self._extra, "MAX_WEBHOOK_PORT", "webhook_port", 8443)),
                     secret=_env_or_extra(self._extra, "MAX_WEBHOOK_SECRET", "webhook_secret") or None,
                     update_types=["message_created", "message_callback", "bot_started",
-                                 "bot_added", "message_edited", "message_removed"])
+                                 "bot_added", "message_edited", "message_removed"],
+                    **extra)
             else:
                 self._transport = self._transport or self._make_transport()
             await self._transport.start(self._handle_update)

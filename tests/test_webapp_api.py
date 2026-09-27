@@ -223,3 +223,31 @@ async def test_static_index_and_traversal(tmp_path, monkeypatch):
                 assert await r.json() == {"error": "not found"}
     finally:
         await server.close()
+
+
+async def test_webhook_transport_serves_app_routes(tmp_path, monkeypatch):
+    from maxbot.transports import WebhookTransport
+
+    wa = _mk_handler_env(monkeypatch, tmp_path, dev=True)
+    import aiohttp
+
+    class FakeClient:
+        async def subscribe(self, url, types, secret=None):
+            self.subscribed = (url, types, secret)
+
+        async def unsubscribe(self):
+            pass
+
+    fc = FakeClient()
+    tr = WebhookTransport(fc, url="https://synthetic.example/hook", port=0,
+                          extra_routes=wa.build_routes(None))
+    await tr.start(lambda u: None)
+    try:
+        addr = tr._runner.addresses[0]
+        base = f"http://{addr[0]}:{addr[1]}"
+        async with aiohttp.ClientSession() as http:
+            async with http.get(f"{base}/max/app/state?dev_user_id=13") as r:
+                assert r.status == 200
+                assert (await r.json())["me"]["user_id"] == 13
+    finally:
+        await tr.stop()

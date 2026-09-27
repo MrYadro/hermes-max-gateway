@@ -104,7 +104,8 @@ class WebhookTransport:
 
     def __init__(self, client, *, url: str, port: int, secret: Optional[str] = None,
                  path: str = "/max/webhook",
-                 update_types: Optional[List[str]] = None):
+                 update_types: Optional[List[str]] = None,
+                 extra_routes: Optional[List[tuple]] = None):
         self._client = client
         self._url = url
         self._port = port
@@ -117,6 +118,7 @@ class WebhookTransport:
         self._runner = None
         self._app = None
         self._on_update: Optional[OnUpdate] = None
+        self._extra_routes = extra_routes or []
 
     def healthy(self) -> bool:
         return self._runner is not None
@@ -127,6 +129,8 @@ class WebhookTransport:
         self._on_update = on_update
         self._app = web.Application()
         self._app.router.add_post(self._path, self._handler)
+        for method, rpath, handler in self._extra_routes:
+            self._app.router.add_route(method, rpath, handler)
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
         site = web.TCPSite(self._runner, "0.0.0.0", self._port)
