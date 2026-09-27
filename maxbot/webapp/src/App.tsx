@@ -112,7 +112,6 @@ export default function App() {
           return (
             <CellSimple
               key={p.name}
-              showChevron={!isCurrent}
               before={<ProfileAvatar name={p.name} size={44} />}
               title={p.name}
               subtitle={p.description || undefined}
