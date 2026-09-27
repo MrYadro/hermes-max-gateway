@@ -2,13 +2,15 @@
 import hashlib
 import hmac
 import json
+import time
 import urllib.parse
+from pathlib import Path
 
 import pytest
 
 pytest.importorskip("gateway.platforms.base")
 
-from maxbot.webapp_api import validate_init_data
+from maxbot.webapp_api import _INIT_HEADER, validate_init_data
 
 TOKEN = "synthetic-bot-token"
 
@@ -38,6 +40,13 @@ def _valid(now=1_700_000_000.0):
         TOKEN, hours_ago=0.0)
 
 
+def _fresh():
+    """Подпись с auth_date у реального «сейчас» — для authorized_user_id без now=."""
+    return _make_init_data(
+        {"auth_date": int(time.time()) - 60, "query_id": "q-1", "user": json.dumps(USER)},
+        TOKEN)
+
+
 def test_valid_signature_returns_user_id():
     assert validate_init_data(_valid(), TOKEN, now=1_700_000_000.0) == 13
 
@@ -63,9 +72,147 @@ def test_stale_auth_date_rejected():
     assert validate_init_data(data, TOKEN, now=1_700_000_000.0) is None
 
 
+def test_future_auth_date_rejected():
+    now = 1_700_000_000.0
+    data = _make_init_data(
+        {"auth_date": int(now) + 300, "query_id": "q-1", "user": json.dumps(USER)},
+        TOKEN)
+    assert validate_init_data(data, TOKEN, now=now) is None
+
+
 def test_duplicated_or_missing_hash_rejected():
     dup = _make_init_data(
         {"auth_date": 1699999940, "query_id": "q-1", "user": json.dumps(USER)},
         TOKEN, dup_hash=True)
     assert validate_init_data(dup, TOKEN, now=1_700_000_000.0) is None
     assert validate_init_data("query_id=q-1", TOKEN, now=1_700_000_000.0) is None
+
+
+def _mk_handler_env(monkeypatch, tmp_path, *, admins="13", dev=False):
+    monkeypatch.setattr("maxbot.webapp_api._plugin_home", lambda: tmp_path)
+    monkeypatch.setenv("MAX_ASSISTANT_ADMINS", admins)
+    monkeypatch.setenv("MAX_ACCESS_TOKEN", TOKEN)
+    if dev:
+        monkeypatch.setenv("MAX_ASSISTANT_DEV", "1")
+    else:
+        monkeypatch.delenv("MAX_ASSISTANT_DEV", raising=False)
+    import maxbot.webapp_api as wa
+    monkeypatch.setattr(wa.profile_switch, "_existing_profiles", lambda: {"default", "work"})
+    return wa
+
+
+def test_authorized_dev_only_from_localhost(tmp_path, monkeypatch):
+    wa = _mk_handler_env(monkeypatch, tmp_path, dev=True)
+    ok = wa.authorized_user_id({}, "127.0.0.1", {"dev_user_id": "13"})
+    assert ok == 13
+    assert wa.authorized_user_id({}, "192.168.1.5", {"dev_user_id": "13"}) is None
+    assert wa.authorized_user_id({}, "127.0.0.1", {}) is None
+
+
+def test_authorized_init_data_header(tmp_path, monkeypatch):
+    wa = _mk_handler_env(monkeypatch, tmp_path)
+    data = _fresh()
+    assert wa.authorized_user_id({_INIT_HEADER: data}, "8.8.8.8", {}) == 13
+    assert wa.authorized_user_id({_INIT_HEADER: "hash=ff"}, "8.8.8.8", {}) is None
+
+
+def test_admin_ids_from_env_or_allowed_users(tmp_path, monkeypatch):
+    wa = _mk_handler_env(monkeypatch, tmp_path, admins="13,42")
+    assert wa.admin_ids() == {13, 42}
+    monkeypatch.delenv("MAX_ASSISTANT_ADMINS", raising=False)
+    monkeypatch.setenv("MAX_ALLOWED_USERS", "7,13")
+    assert wa.admin_ids() == {7, 13}
+
+
+async def _serve(wa):
+    from aiohttp import web
+    from aiohttp.test_utils import TestServer
+
+    class _Adapter:
+        pass
+
+    app = web.Application()
+    for method, path, handler in wa.build_routes(_Adapter()):
+        app.router.add_route(method, path, handler)
+    server = TestServer(app)
+    await server.start_server()
+    return server
+
+
+async def test_state_and_set_flow(tmp_path, monkeypatch):
+    wa = _mk_handler_env(monkeypatch, tmp_path, dev=True)
+    import aiohttp
+
+    server = await _serve(wa)
+    try:
+        async with aiohttp.ClientSession() as http:
+            async with http.get(server.make_url(
+                    "/max/app/state?dev_user_id=13")) as r:
+                assert r.status == 200
+                state = await r.json()
+            assert state["me"] == {"user_id": 13, "is_admin": True}
+            names = {p["name"] for p in state["profiles"]}
+            assert names == {"default", "work"}
+            async with http.post(server.make_url(
+                    "/max/app/set?dev_user_id=13"),
+                    json={"chat_id": "500", "profile": "work"}) as r:
+                assert r.status == 200
+                body = await r.json()
+            assert body["ok"] is True
+            chats = {c["chat_id"]: c for c in body["state"]["chats"]}
+            assert chats["500"]["profile"] == "work"
+            async with http.post(server.make_url(
+                    "/max/app/set?dev_user_id=13"),
+                    json={"chat_id": "500", "profile": "ghost"}) as r:
+                assert r.status == 400
+    finally:
+        await server.close()
+
+
+async def test_non_admin_gets_403_and_dev_off(tmp_path, monkeypatch):
+    wa = _mk_handler_env(monkeypatch, tmp_path, admins="13", dev=True)
+    import aiohttp
+
+    server = await _serve(wa)
+    try:
+        async with aiohttp.ClientSession() as http:
+            async with http.get(server.make_url(
+                    "/max/app/state?dev_user_id=42")) as r:
+                assert r.status == 403
+            monkeypatch.delenv("MAX_ASSISTANT_DEV")
+            # dev выключен: даже 127.0.0.1 без initData → 401
+            async with http.get(server.make_url("/max/app/state")) as r:
+                assert r.status == 401
+            async with http.get(server.make_url(
+                    "/max/app/state?dev_user_id=42")) as r:
+                assert r.status == 401
+    finally:
+        await server.close()
+
+
+async def test_static_index_and_traversal(tmp_path, monkeypatch):
+    wa = _mk_handler_env(monkeypatch, tmp_path)
+    dist = Path(wa.__file__).parent / "webapp" / "dist"
+    dist.mkdir(parents=True, exist_ok=True)
+    (dist / "index.html").write_text("<html>app</html>", encoding="utf-8")
+    (dist / "assets").mkdir(exist_ok=True)
+    (dist / "assets" / "app.js").write_text("//bundle", encoding="utf-8")
+    secret_file = dist.parent / "secret.txt"
+    secret_file.write_text("s3cret", encoding="utf-8")
+    import aiohttp
+
+    server = await _serve(wa)
+    try:
+        async with aiohttp.ClientSession() as http:
+            async with http.get(server.make_url("/max/app/")) as r:
+                assert r.status == 200 and "app" in await r.text()
+            async with http.get(server.make_url("/max/app/assets/app.js")) as r:
+                assert r.status == 200
+            async with http.get(server.make_url(
+                    "/max/app/../secret.txt")) as r:
+                assert r.status in (400, 404)
+    finally:
+        await server.close()
+        secret_file.unlink(missing_ok=True)
+        (dist / "assets" / "app.js").unlink(missing_ok=True)
+        (dist / "index.html").unlink(missing_ok=True)
