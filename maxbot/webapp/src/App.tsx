@@ -11,6 +11,7 @@ import {
 import {
   Avatar,
   CellAction,
+  Flex,
   CellHeader,
   CellList,
   CellSimple,
@@ -142,11 +143,11 @@ export default function App() {
   return (
     <Panel mode="secondary">
       <Container>
-        {view === "chat" && focus ? (
-          <>
-            {here && focus !== here.id && <NavRow chatId={here.id} />}
-            <ProfilePicker chatId={focus} />
-            <div style={{ marginTop: 16 }}>
+        <Flex direction="column" gap={16}>
+          {view === "chat" && focus ? (
+            <>
+              {here && focus !== here.id && <NavRow chatId={here.id} />}
+              <ProfilePicker chatId={focus} />
               <CellList mode="island">
                 <CellSimple
                   showChevron
@@ -156,34 +157,34 @@ export default function App() {
                   onClick={() => setView("chats")}
                 />
               </CellList>
-            </div>
-          </>
-        ) : (
-          <>
-            {here && <NavRow chatId={here.id} />}
-            {state.chats.length === 0 ? (
-              <Typography.Body>Чатов пока нет — напишите боту.</Typography.Body>
-            ) : (
-              <CellList mode="island">
-                {state.chats.map((c) => {
-                  const meta = TYPE_META[c.chat_type] ?? TYPE_META.unknown;
-                  return (
-                    <CellSimple
-                      key={c.chat_id}
-                      height="compact"
-                      showChevron
-                      before={<ProfileAvatar name={c.profile} size={36} />}
-                      title={c.chat_id}
-                      subtitle={meta.label}
-                      after={<Typography.Body variant="small">{c.profile}</Typography.Body>}
-                      onClick={() => openChat(c.chat_id)}
-                    />
-                  );
-                })}
-              </CellList>
-            )}
-          </>
-        )}
+            </>
+          ) : (
+            <>
+              {here && <NavRow chatId={here.id} />}
+              {state.chats.length === 0 ? (
+                <Typography.Body>Чатов пока нет — напишите боту.</Typography.Body>
+              ) : (
+                <CellList mode="island">
+                  {state.chats.map((c) => {
+                    const meta = TYPE_META[c.chat_type] ?? TYPE_META.unknown;
+                    return (
+                      <CellSimple
+                        key={c.chat_id}
+                        height="compact"
+                        showChevron
+                        before={<ProfileAvatar name={c.profile} size={36} />}
+                        title={c.chat_id}
+                        subtitle={meta.label}
+                        after={<Typography.Body variant="small">{c.profile}</Typography.Body>}
+                        onClick={() => openChat(c.chat_id)}
+                      />
+                    );
+                  })}
+                </CellList>
+              )}
+            </>
+          )}
+        </Flex>
       </Container>
     </Panel>
   );
