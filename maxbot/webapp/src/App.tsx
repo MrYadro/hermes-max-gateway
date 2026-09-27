@@ -13,6 +13,7 @@ import {
   Flex,
   CellList,
   CellSimple,
+  EllipsisText,
   Container,
   Panel,
   Spinner,
@@ -130,9 +131,15 @@ export default function App() {
             <CellSimple
               key={p.name}
               before={<ProfileAvatar name={p.name} size={44} />}
-              title={p.name}
-              subtitle={p.description || undefined}
-              after={isCurrent ? <Check size={20} strokeWidth={2} /> : undefined}
+              title={<EllipsisText maxLines={1}>{p.name}</EllipsisText>}
+              subtitle={
+                p.description ? <EllipsisText maxLines={1}>{p.description}</EllipsisText> : undefined
+              }
+              after={
+                <span style={{ width: 24, display: "inline-flex", justifyContent: "center" }}>
+                  {isCurrent ? <Check size={20} strokeWidth={2} /> : null}
+                </span>
+              }
               disabled={busy}
               onClick={() => !isCurrent && pick(chatId, p.name)}
             />
@@ -173,9 +180,13 @@ export default function App() {
                         height="compact"
                         showChevron
                         before={<ProfileAvatar name={c.profile} size={36} />}
-                        title={c.chat_id}
-                        subtitle={meta.label}
-                        after={<Typography.Body variant="small">{c.profile}</Typography.Body>}
+                        title={<EllipsisText maxLines={1}>{c.chat_id}</EllipsisText>}
+                        subtitle={<EllipsisText maxLines={1}>{meta.label}</EllipsisText>}
+                        after={
+                          <Typography.Body variant="small" style={{ whiteSpace: "nowrap" }}>
+                            {c.profile}
+                          </Typography.Body>
+                        }
                         onClick={() => openChat(c.chat_id)}
                       />
                     );
