@@ -55,6 +55,12 @@ export function currentChat(): CurrentChat | null {
   return { id: String(chat.id), type };
 }
 
+/** Dev-only: стартовый экран конкретного чата (?dev_focus=<chat_id>) — для демо/скриншотов */
+export function devFocus(): string | null {
+  if (!devUserId()) return null;
+  return new URLSearchParams(window.location.search).get("dev_focus");
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const initData = window.WebApp?.initData;

@@ -20,7 +20,7 @@ import {
   Spinner,
   Typography,
 } from "@maxhub/max-ui";
-import { api, CurrentChat, currentChat, StateResponse } from "./api";
+import { api, CurrentChat, currentChat, devFocus, StateResponse } from "./api";
 
 const ICON_SIZE = 20;
 
@@ -69,7 +69,7 @@ export default function App() {
   const [state, setState] = useState<StateResponse | null>(null);
   const [error, setError] = useState("");
   const [view, setView] = useState<View>(here ? "chat" : "chats");
-  const [focus, setFocus] = useState<string | null>(here?.id ?? null);
+  const [focus, setFocus] = useState<string | null>(devFocus() ?? here?.id ?? null);
   const [busy, setBusy] = useState(false);
 
   const openChat = (chatId: string) => {
