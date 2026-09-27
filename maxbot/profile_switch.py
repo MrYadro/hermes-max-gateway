@@ -94,3 +94,42 @@ def set_profile(home: Path, chat_key: str, profile: str) -> None:
     tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     tmp.replace(f)
     _cache.pop(home, None)
+
+
+_known_cache: Dict[Path, tuple] = {}  # home -> (mtime_ns, chats)
+
+
+def _known_store(home: Path) -> Path:
+    return home / "maxbot-chat-memory" / "_known_chats.json"
+
+
+def known_chats(home: Path) -> Dict[str, Dict[str, str]]:
+    f = _known_store(home)
+    try:
+        mtime = f.stat().st_mtime_ns
+    except OSError:
+        _known_cache.pop(home, None)
+        return {}
+    cached = _known_cache.get(home)
+    if cached and cached[0] == mtime:
+        return dict(cached[1])
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+        data = {str(k): {"type": str(v.get("type") or "unknown")}
+                for k, v in data.items() if isinstance(v, dict)}
+    except Exception:
+        data = {}
+    _known_cache[home] = (mtime, data)
+    return dict(data)
+
+
+def remember_chat(home: Path, chat_key: str, chat_type: str) -> None:
+    chat_type = chat_type if chat_type in {"dm", "group", "channel"} else "unknown"
+    f = _known_store(home)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    data = known_chats(home)
+    data[str(chat_key)] = {"type": chat_type}
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(f)
+    _known_cache.pop(home, None)

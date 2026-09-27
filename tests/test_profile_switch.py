@@ -435,6 +435,46 @@ class _MediaFC:
         return "m.1"
 
 
+def test_known_chats_roundtrip(tmp_path):
+    profile_switch.remember_chat(tmp_path, "500", "channel")
+    profile_switch.remember_chat(tmp_path, "88", "group")
+    assert profile_switch.known_chats(tmp_path) == {
+        "500": {"type": "channel"}, "88": {"type": "group"}}
+
+
+def test_known_chats_type_overwrite(tmp_path):
+    profile_switch.remember_chat(tmp_path, "500", "group")
+    profile_switch.remember_chat(tmp_path, "500", "channel")
+    assert profile_switch.known_chats(tmp_path) == {"500": {"type": "channel"}}
+
+
+async def test_message_and_comment_remember_chat(tmp_path, monkeypatch):
+    from maxbot.adapter import MaxAdapter
+    from maxbot.models import parse_update
+
+    class _Cfg:
+        extra = {}
+
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
+    adapter = MaxAdapter(_Cfg(), client=None, transport=None)
+    adapter._bot_user_id = 999
+    adapter._interactive = None
+    adapter._uploader = None
+    adapter._username_re = __import__("re").compile(r"(?<![\w@])@hermes_bot\b")
+    col = _Col()
+    adapter._message_handler = col
+    await adapter._handle_update(_upd_text("привет", chat_id=77, chat_type="dialog"))
+    ev = await _collect_event(adapter, parse_update({
+        "update_type": "comment_created", "marker": 9,
+        "message": {"body": {"mid": "cm.1", "text": "ок"},
+                    "recipient": {"chat_id": 500, "post_id": "mid.777"},
+                    "sender": {"user_id": 13, "name": "Петя"}, "timestamp": 1},
+    }))
+    assert ev is not None
+    known = profile_switch.known_chats(tmp_path)
+    assert known.get("77") == {"type": "dm"} and known.get("500") == {"type": "channel"}
+
+
 async def test_media_in_comment_thread_rejected_with_notice():
     """MAX-комментарии — только текст: медиа из ветки отклоняем с пояснением."""
     import pytest as _pytest

@@ -799,6 +799,9 @@ class MaxAdapter(BasePlatformAdapter):
         if not post_id:
             return
         channel_id = int(recipient.get("chat_id") or 0)
+        with contextlib.suppress(Exception):
+            from .profile_switch import remember_chat
+            remember_chat(_plugin_home(), str(channel_id), "channel")
         msg = update.message
         author = (msg.sender.name or f"id{msg.sender.user_id}") if msg.sender else "канал"
         text = msg.body.text or ""
@@ -1003,6 +1006,9 @@ class MaxAdapter(BasePlatformAdapter):
             self._chat_users[str(msg.chat_id)] = (
                 str(msg.sender.user_id), (msg.sender.name or ""))
         chat_type = "dm" if msg.chat_type == "dialog" else "group"
+        with contextlib.suppress(Exception):
+            from .profile_switch import remember_chat
+            remember_chat(_plugin_home(), str(msg.chat_id), chat_type)
         text = _fix_dashed_command(msg.body.text or "")
         if chat_type == "group":
             passed, text = await self._group_gate(msg, text)
