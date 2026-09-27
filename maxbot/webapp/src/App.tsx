@@ -42,9 +42,11 @@ function gradientOf(name: string): Gradient {
 }
 
 function ProfileAvatar({ name, size = 40 }: { name: string; size?: number }) {
+  // «default» закреплён официальный оранжевый градиент MAX UI — единство с иконкой бота
+  const gradient = name === "default" ? "orange" : gradientOf(name);
   return (
     <Avatar.Container size={size} form="squircle">
-      <Avatar.Text gradient={gradientOf(name)}>{name.slice(0, 1).toUpperCase()}</Avatar.Text>
+      <Avatar.Text gradient={gradient}>{name.slice(0, 1).toUpperCase()}</Avatar.Text>
     </Avatar.Container>
   );
 }
