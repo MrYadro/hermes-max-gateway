@@ -48,7 +48,7 @@ function ProfileAvatar({ name, size = 40 }: { name: string; size?: number }) {
   );
 }
 
-type View = "chat" | "chats" | "profiles";
+type View = "chat" | "chats";
 
 export default function App() {
   const here = currentChat();
@@ -158,7 +158,7 @@ export default function App() {
               </CellAction>
             </CellList>
           </>
-        ) : view === "chats" ? (
+        ) : (
           <>
             {here && <NavRow chatId={here.id} />}
             {state.chats.length === 0 ? (
@@ -182,42 +182,6 @@ export default function App() {
                 })}
               </CellList>
             )}
-            <CellList mode="island">
-              <CellAction
-                mode="secondary"
-                height="compact"
-                showChevron
-                before={<Compass size={ICON_SIZE} strokeWidth={2} />}
-                onClick={() => setView("profiles")}
-              >
-                Все профили
-              </CellAction>
-            </CellList>
-          </>
-        ) : (
-          <>
-            {here && <NavRow chatId={here.id} />}
-            <CellList mode="island" header={<CellHeader>Профили</CellHeader>}>
-              {state.profiles.map((p) => (
-                <CellSimple
-                  key={p.name}
-                  before={<ProfileAvatar name={p.name} size={44} />}
-                  title={p.name}
-                  subtitle={p.description || undefined}
-                />
-              ))}
-            </CellList>
-            <CellList mode="island">
-              <CellAction
-                mode="secondary"
-                height="compact"
-                showChevron
-                before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />}
-                onClick={() => setView("chats")}
-              >
-                Все чаты
-              </CellAction>
-            </CellList>
           </>
         )}
       </Container>
