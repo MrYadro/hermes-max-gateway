@@ -1,4 +1,8 @@
-# Ваш агент в MAX 🚀
+<p align="center">
+  <img src="assets/icon-512.png" width="120" alt="hermes-max-gateway" />
+</p>
+
+<h1 align="center">Ваш агент в MAX 🚀</h1>
 
 Подключите [Hermes Agent](https://hermes-agent.nousresearch.com/) к мессенджеру
 [MAX](https://max.ru) — и общайтесь со своим ИИ-помощником прямо в чате: он слышит
