@@ -379,6 +379,7 @@ class MaxAdapter(BasePlatformAdapter):
                     from .webapp_api import build_routes
                     extra = {"extra_routes": build_routes(self)}
                 except Exception:
+                    logger.exception("max: роуты мини-аппа не подключены")
                     extra = {}
                 self._transport = self._transport or WebhookTransport(
                     self._client, url=url,

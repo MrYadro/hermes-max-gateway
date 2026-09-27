@@ -227,9 +227,17 @@ MAX_WEBHOOK_URL=https://<домен>
 MAX_ASSISTANT_ADMINS=123,456   # кому доступно управление; пусто → наследует MAX_ALLOWED_USERS
 ```
 
-⚠️ Перед включением webhook-режима проверьте строку подписки в
-`maxbot/transports.py` (вызов `subscribe(..., secret=...)`, известный
-плейсхолдер `self._secret`) — это отдельный чек, не покрытый тестами.
+**Преддеплойный smoke-чек** (перед боевым включением webhook-режима):
+
+1. Поднимите шлюз с `MAX_UPDATES_MODE=webhook` и убедитесь, что `connect()`
+   прошёл без ошибок (в логе нет `config_missing`/падений старта транспорта).
+2. Откройте `<MAX_WEBHOOK_URL>/max/app/` — статика мини-аппа должна отвечать.
+3. Строка подписки `subscribe` в `maxbot/transports.py` не покрыта
+   юнит-тестами — проверьте в логе, что подписка на обновления установлена.
+
+Сноска: в старых ревизиях `transports.py` в вызове `subscribe(..., secret=...)`
+жил плейсхолдер `self._secret` — при обновлении с них стоит сверить строку
+подписки глазами.
 
 **Активация на платформе.** В кабинете [«MAX для бизнеса»](https://business.max.ru)
 мини-апп активируется нативной кнопкой в чате бота; URL мини-аппа —
@@ -241,7 +249,7 @@ MAX_ASSISTANT_ADMINS=123,456   # кому доступно управление;
 ```bash
 cd maxbot/webapp
 npm install
-npm run dev        # vite на :5173, проксирует /max/app/* на MAX_WEBHOOK_PORT
+npm run dev        # vite на :5173, проксирует API мини-аппа (/max/app/state, /max/app/set) на MAX_WEBHOOK_PORT
 ```
 
 Бэкенд-сессию запустите с `MAX_ASSISTANT_DEV=1` и откройте в браузере

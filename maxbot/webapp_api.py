@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import unquote
 
 from gateway.platforms._shared import get_scoped_secret
@@ -68,13 +68,28 @@ def admin_ids() -> set:
     return _admin_ids_from_env()
 
 
-def authorized_user_id(headers: Dict[str, str], remote: str, query: Dict[str, str]) -> Optional[int]:
+def _header(headers: Optional[Mapping[str, str]], name: str) -> str:
+    """Case-insensitive lookup: CIMultiDict даёт его через .get, обычный dict — нет."""
+    h = headers or {}
+    val = h.get(name)
+    if val:
+        return str(val)
+    lowered = name.lower()
+    for k, v in h.items():
+        if str(k).lower() == lowered and v:
+            return str(v)
+    return ""
+
+
+def authorized_user_id(headers: Mapping[str, str], remote: str,
+                       query: Dict[str, str]) -> Optional[int]:
     dev = str(get_scoped_secret("MAX_ASSISTANT_DEV", "") or "").strip().lower() in {"1", "true", "yes"}
-    if dev and remote in {"127.0.0.1", "::1"}:
+    proxied = bool(_header(headers, "X-Forwarded-For") or _header(headers, "X-Real-IP"))
+    if dev and remote in {"127.0.0.1", "::1"} and not proxied:
         raw = str(query.get("dev_user_id") or "").strip()
         if raw.lstrip("-").isdigit():
             return int(raw)
-    data = (headers or {}).get(_INIT_HEADER) or ""
+    data = _header(headers, _INIT_HEADER)
     if not data:
         return None
     token = get_scoped_secret("MAX_ACCESS_TOKEN", "")
@@ -99,7 +114,7 @@ def _state_payload(user_id: int) -> Dict[str, Any]:
 async def _handle_state(request):
     from aiohttp import web
 
-    uid = authorized_user_id(dict(request.headers), request.remote, dict(request.query))
+    uid = authorized_user_id(request.headers, request.remote, request.query)
     if uid is None:
         return web.json_response({"error": "unauthorized"}, status=401)
     if uid not in _admin_ids_from_env():
@@ -110,7 +125,7 @@ async def _handle_state(request):
 async def _handle_set(request):
     from aiohttp import web
 
-    uid = authorized_user_id(dict(request.headers), request.remote, dict(request.query))
+    uid = authorized_user_id(request.headers, request.remote, request.query)
     if uid is None:
         return web.json_response({"error": "unauthorized"}, status=401)
     if uid not in _admin_ids_from_env():

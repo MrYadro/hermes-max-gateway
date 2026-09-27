@@ -115,6 +115,25 @@ def test_authorized_init_data_header(tmp_path, monkeypatch):
     assert wa.authorized_user_id({_INIT_HEADER: "hash=ff"}, "8.8.8.8", {}) is None
 
 
+def test_authorized_init_data_header_lowercase_key(tmp_path, monkeypatch):
+    # браузер/WebApp может слать заголовок lowercase (HTTP/2) — lookup
+    # обязан быть регистронезависимым
+    wa = _mk_handler_env(monkeypatch, tmp_path)
+    assert wa.authorized_user_id({"x-webapp-initdata": _fresh()}, "8.8.8.8", {}) == 13
+
+
+def test_dev_bypass_rejected_behind_proxy_headers(tmp_path, monkeypatch):
+    # reverse-proxy ставит X-Forwarded-For/X-Real-IP: dev-байпас с
+    # remote=127.0.0.1 (как его видит aiohttp за прокси) должен быть закрыт
+    wa = _mk_handler_env(monkeypatch, tmp_path, dev=True)
+    assert wa.authorized_user_id(
+        {"X-Forwarded-For": "203.0.113.5"}, "127.0.0.1", {"dev_user_id": "13"}) is None
+    assert wa.authorized_user_id(
+        {"x-real-ip": "203.0.113.5"}, "127.0.0.1", {"dev_user_id": "13"}) is None
+    # без прокси-заголовков dev-байпас на localhost работает
+    assert wa.authorized_user_id({}, "127.0.0.1", {"dev_user_id": "13"}) == 13
+
+
 def test_admin_ids_from_env_or_allowed_users(tmp_path, monkeypatch):
     wa = _mk_handler_env(monkeypatch, tmp_path, admins="13,42")
     assert wa.admin_ids() == {13, 42}
@@ -164,6 +183,23 @@ async def test_state_and_set_flow(tmp_path, monkeypatch):
                     "/max/app/set?dev_user_id=13"),
                     json={"chat_id": "500", "profile": "ghost"}) as r:
                 assert r.status == 400
+    finally:
+        await server.close()
+
+
+async def test_state_accepts_lowercase_init_data_header(tmp_path, monkeypatch):
+    """Хендлер передаёт request.headers как есть (CIMultiDict): lowercase-ключ
+    от реального клиента не должен теряться при dict(...)-конверсии."""
+    wa = _mk_handler_env(monkeypatch, tmp_path)
+    import aiohttp
+
+    server = await _serve(wa)
+    try:
+        async with aiohttp.ClientSession() as http:
+            async with http.get(server.make_url("/max/app/state"),
+                                headers={"x-webapp-initdata": _fresh()}) as r:
+                assert r.status == 200
+                assert (await r.json())["me"]["user_id"] == 13
     finally:
         await server.close()
 
