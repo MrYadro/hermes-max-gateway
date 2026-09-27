@@ -206,11 +206,7 @@ export default function App() {
                         before={<ChatAvatar chatId={c.chat_id} title={c.title} type={c.chat_type} />}
                         title={<EllipsisText maxLines={1}>{c.title || c.chat_id}</EllipsisText>}
                         subtitle={<EllipsisText maxLines={1}>{meta.label}</EllipsisText>}
-                        after={
-                          <Typography.Body variant="small" style={{ whiteSpace: "nowrap" }}>
-                            {c.profile}
-                          </Typography.Body>
-                        }
+                        after={<Typography.Body variant="small">{c.profile}</Typography.Body>}
                         onClick={() => openChat(c.chat_id)}
                       />
                     );
