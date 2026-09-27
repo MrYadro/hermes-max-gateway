@@ -10,6 +10,7 @@ import {
 import {
   Avatar,
   CellAction,
+  CellHeader,
   Flex,
   CellList,
   CellSimple,
@@ -155,6 +156,11 @@ export default function App() {
         <Flex direction="column" gap={16}>
           {view === "chat" && focus ? (
             <>
+              {here && focus !== here.id && (
+                <CellHeader titleStyle="caps" fullWidth>
+                  {state.chats.find((c) => c.chat_id === focus)?.title || focus}
+                </CellHeader>
+              )}
               <ProfilePicker chatId={focus} />
               <CellList mode="island">
                 <CellSimple
