@@ -962,11 +962,22 @@ class MaxAdapter(BasePlatformAdapter):
             return (f"✅ Профиль «{name}» активен. Следующее сообщение начнёт новую "
                     f"сессию с его SOUL.md, скиллами и моделью. Переключение — /assistant.")
 
+        async def _send_app_link() -> None:
+            base = str(get_scoped_secret("MAX_WEBHOOK_URL", "") or "").rstrip("/")
+            if base:
+                with contextlib.suppress(Exception):
+                    await self._client.send_message(
+                        int(chat_id), "🖥 Профили и настройки:",
+                        attachments=[{"type": "inline_keyboard", "payload": {"buttons": [[
+                            {"type": "open_app", "text": "🖥 Управлять профилями",
+                             "url": f"{base}/max/app/"}]]}}])
+
         if arg:
             if profile_switch.profile_exists(arg):
                 profile_switch.set_profile(_plugin_home(), str(chat_id), arg)
                 with contextlib.suppress(Exception):
                     await self._client.send_message(int(chat_id), _confirm(arg))
+                await _send_app_link()
             else:
                 names = ", ".join(profile_switch.available_profiles())
                 with contextlib.suppress(Exception):
@@ -989,6 +1000,7 @@ class MaxAdapter(BasePlatformAdapter):
         await self._interactive.send_choice_picker(
             chat_id, f"🧭 Текущий: {current} — выберите профиль:", choices,
             session_key="", on_choice_selected=_select)
+        await _send_app_link()
 
     async def _on_message(self, msg) -> None:
         if msg.sender and msg.sender.user_id == self._bot_user_id:
