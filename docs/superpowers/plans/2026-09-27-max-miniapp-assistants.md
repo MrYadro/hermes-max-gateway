@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Тесты: `HERMES_AGENT_SRC=/Users/y.yadrushnikov/Dev/hermes-agent /Users/y.yadrushnikov/Dev/hermes-max-gateway/.venv/bin/python -m pytest -q` (из корня репо); линт: `.../.venv/bin/python -m ruff check .`
+- Тесты: `HERMES_AGENT_SRC=../hermes-agent .venv/bin/python -m pytest -q` (из корня репо); линт: `.../.venv/bin/python -m ruff check .`
 - Новое поведение — только RED→GREEN; фикстуры синтетические (chat_id 500/88, user_id 13/42)
 - Коммиты на русском, conventional; ядро hermes-agent не трогаем
 - PII: в тестах/репо никаких реальных id/токенов; токен бота только из scoped env

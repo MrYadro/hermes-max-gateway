@@ -3217,7 +3217,7 @@ git commit -m "docs: README (рус.), live-скрипт, CI"
 ```bash
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
 hermes setup            # модель-провайдер (например Nous Portal)
-cd /Users/y.yadrushnikov/Dev/hermes-max-gateway
+cd .
 uv build && pip install dist/maxbot-0.1.0-py3-none-any.whl
 # либо: cp -r maxbot ~/.hermes/plugins/maxbot
 ```
