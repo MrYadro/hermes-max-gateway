@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   Compass,
-  LayoutGrid,
   Megaphone,
   MessageCircle,
   User,
@@ -50,14 +49,20 @@ function ProfileAvatar({ name, size = 40 }: { name: string; size?: number }) {
   );
 }
 
-type View = "current" | "chats" | "profiles";
+type View = "chat" | "chats" | "profiles";
 
 export default function App() {
   const here = currentChat();
   const [state, setState] = useState<StateResponse | null>(null);
   const [error, setError] = useState("");
-  const [view, setView] = useState<View>(here ? "current" : "chats");
+  const [view, setView] = useState<View>(here ? "chat" : "chats");
+  const [focus, setFocus] = useState<string | null>(here?.id ?? null);
   const [busy, setBusy] = useState(false);
+
+  const openChat = (chatId: string) => {
+    setFocus(chatId);
+    setView("chat");
+  };
 
   const load = () => api.state().then(setState).catch((e) => setError(String(e.message ?? e)));
 
@@ -139,14 +144,24 @@ export default function App() {
     <Panel mode="secondary">
       <Container>
 
-        {view === "current" && here ? (
+        {view === "chat" ? (
           <>
-            <ChatIsland chatId={here.id} type={typeOf(here.id)} />
+            {here && focus !== here.id && (
+              <CellList mode="island">
+                <CellAction before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />}
+                           onClick={() => openChat(here.id)}>
+                  Этот чат ({here.id})
+                </CellAction>
+              </CellList>
+            )}
+            {focus && <ChatIsland chatId={focus} type={typeOf(focus)} />}
             <CellList mode="island">
-              <CellAction before={<LayoutGrid size={ICON_SIZE} strokeWidth={2} />} onClick={() => setView("chats")}>
+              <CellAction before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />}
+                         onClick={() => setView("chats")}>
                 Все чаты
               </CellAction>
-              <CellAction before={<Compass size={ICON_SIZE} strokeWidth={2} />} onClick={() => setView("profiles")}>
+              <CellAction before={<Compass size={ICON_SIZE} strokeWidth={2} />}
+                         onClick={() => setView("profiles")}>
                 Все профили
               </CellAction>
             </CellList>
@@ -155,7 +170,8 @@ export default function App() {
           <>
             {here && (
               <CellList mode="island">
-                <CellAction before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />} onClick={() => setView("current")}>
+                <CellAction before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />}
+                           onClick={() => openChat(here.id)}>
                   Этот чат ({here.id})
                 </CellAction>
               </CellList>
@@ -163,16 +179,32 @@ export default function App() {
             {state.chats.length === 0 ? (
               <Typography.Body>Чатов пока нет — напишите боту.</Typography.Body>
             ) : (
-              state.chats.map((c) => (
-                <ChatIsland key={c.chat_id} chatId={c.chat_id} type={c.chat_type} />
-              ))
+              <CellList mode="island" header={<CellHeader>Чаты</CellHeader>}>
+                {state.chats.map((c) => {
+                  const meta = TYPE_META[c.chat_type] ?? TYPE_META.unknown;
+                  const profile = c.profile;
+                  return (
+                    <CellSimple
+                      key={c.chat_id}
+                      height="compact"
+                      showChevron
+                      before={<ProfileAvatar name={profile} size={36} />}
+                      title={c.chat_id}
+                      subtitle={meta.label}
+                      after={<Typography.Label>{profile}</Typography.Label>}
+                      onClick={() => openChat(c.chat_id)}
+                    />
+                  );
+                })}
+              </CellList>
             )}
           </>
         ) : (
           <>
             {here && (
               <CellList mode="island">
-                <CellAction before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />} onClick={() => setView("current")}>
+                <CellAction before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />}
+                           onClick={() => openChat(here.id)}>
                   Этот чат ({here.id})
                 </CellAction>
               </CellList>
