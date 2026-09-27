@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  ArrowLeft,
   Check,
   Megaphone,
   MessageCircle,
@@ -126,18 +125,11 @@ export default function App() {
     );
   };
 
-  const NavRow = ({ chatId }: { chatId: string }) => (
-    <CellList mode="island">
-      <CellAction
-        mode="secondary"
-        height="compact"
-        showChevron
-        before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />}
-        onClick={() => openChat(chatId)}
-      >
-        Этот чат
-      </CellAction>
-    </CellList>
+  /** Заголовок-подсказка контекста (не кнопка): возврат — через «Настройки» → чат */
+  const NavRow = () => (
+    <CellHeader titleStyle="caps" fullWidth>
+      Этот чат
+    </CellHeader>
   );
 
   return (
@@ -146,7 +138,7 @@ export default function App() {
         <Flex direction="column" gap={16}>
           {view === "chat" && focus ? (
             <>
-              {here && focus !== here.id && <NavRow chatId={here.id} />}
+              {here && focus !== here.id && <NavRow />}
               <ProfilePicker chatId={focus} />
               <CellList mode="island">
                 <CellSimple
@@ -160,7 +152,7 @@ export default function App() {
             </>
           ) : (
             <>
-              {here && <NavRow chatId={here.id} />}
+              {here && <NavRow />}
               {state.chats.length === 0 ? (
                 <Typography.Body>Чатов пока нет — напишите боту.</Typography.Body>
               ) : (
