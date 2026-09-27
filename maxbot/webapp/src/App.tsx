@@ -49,6 +49,19 @@ function ProfileAvatar({ name, size = 40 }: { name: string; size?: number }) {
   );
 }
 
+/** Аватар чата: градиент по chat_id, буква названия (нет названия — иконка типа) */
+function ChatAvatar({ chatId, title, type, size = 36 }: {
+  chatId: string; title?: string; type: string; size?: number;
+}) {
+  const meta = TYPE_META[type] ?? TYPE_META.unknown;
+  const glyph = title?.trim() ? title.trim().slice(0, 1).toUpperCase() : <meta.Icon size={size * 0.5} strokeWidth={2} />;
+  return (
+    <Avatar.Container size={size} form="squircle">
+      <Avatar.Text gradient={gradientOf(chatId)}>{glyph}</Avatar.Text>
+    </Avatar.Container>
+  );
+}
+
 type View = "chat" | "chats";
 
 export default function App() {
@@ -190,7 +203,7 @@ export default function App() {
                         key={c.chat_id}
                         height="compact"
                         showChevron
-                        before={<ProfileAvatar name={c.profile} size={36} />}
+                        before={<ChatAvatar chatId={c.chat_id} title={c.title} type={c.chat_type} />}
                         title={<EllipsisText maxLines={1}>{c.title || c.chat_id}</EllipsisText>}
                         subtitle={<EllipsisText maxLines={1}>{meta.label}</EllipsisText>}
                         after={
