@@ -131,7 +131,8 @@ export default function App() {
           return (
             <CellSimple
               key={p.name}
-              before={<ProfileAvatar name={p.name} size={44} />}
+              height="compact"
+              before={<ProfileAvatar name={p.name} size={36} />}
               title={<EllipsisText maxLines={1}>{p.name}</EllipsisText>}
               subtitle={
                 p.description ? <EllipsisText maxLines={1}>{p.description}</EllipsisText> : undefined
