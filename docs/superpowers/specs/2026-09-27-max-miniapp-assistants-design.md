@@ -148,4 +148,8 @@ MAX Bot API ──(updates)──▶ /max/webhook (как сейчас) ┘
 1. `MAX_UPDATES_MODE=webhook` + `MAX_WEBHOOK_URL=https://<домен>` (+ починка SECRET_0__)
 2. `npm run build` в maxbot/webapp → dist закоммитить/залить
 3. `MAX_ASSISTANT_ADMINS=<твой user_id>`
-4. Рестарт гейтвея → `/assistant` даёт ссылку → мини-апп открывается в MAX
+4. Активировать мини-приложение у бота на платформе (business.max.ru),
+   указав URL `<MAX_WEBHOOK_URL>/max/app/` — в чате с ботом появится нативная
+   кнопка запуска
+5. Рестарт гейтвея → мини-апп открывается нативной кнопкой из чата и
+   кнопкой `open_app` от `/assistant`
