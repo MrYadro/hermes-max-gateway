@@ -20,6 +20,14 @@ declare global {
       initDataUnsafe?: {
         chat?: { id: number; type: "DIALOG" | "CHAT" | "CHANNEL" };
       };
+      /** Нативная кнопка «Назад» в шапке мини-аппа (MAX Bridge) */
+      BackButton?: {
+        show(): void;
+        hide(): void;
+        isVisible: boolean;
+        onClick(cb: () => void): void;
+        offClick(cb: () => void): void;
+      };
     };
   }
 }

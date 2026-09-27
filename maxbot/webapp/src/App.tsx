@@ -11,7 +11,6 @@ import {
   Avatar,
   CellAction,
   Flex,
-  CellHeader,
   CellList,
   CellSimple,
   Container,
@@ -66,6 +65,24 @@ export default function App() {
   const load = () => api.state().then(setState).catch((e) => setError(String(e.message ?? e)));
 
   useEffect(() => { load(); }, []);
+
+  /** Нативная «Назад» (MAX Bridge): видна везде, кроме корневого экрана */
+  useEffect(() => {
+    const bb = window.WebApp?.BackButton;
+    if (!bb) return;
+    const atRoot = here ? view === "chat" && focus === here.id : view === "chats";
+    if (atRoot) {
+      bb.hide();
+      return;
+    }
+    const cb = () => {
+      if (view === "chats" && here) openChat(here.id);
+      else setView("chats");
+    };
+    bb.onClick(cb);
+    bb.show();
+    return () => bb.offClick(cb);
+  }, [view, focus, here]);
 
   const pick = async (chatId: string, profile: string) => {
     setBusy(true);
@@ -125,20 +142,12 @@ export default function App() {
     );
   };
 
-  /** Заголовок-подсказка контекста (не кнопка): возврат — через «Настройки» → чат */
-  const NavRow = () => (
-    <CellHeader titleStyle="caps" fullWidth>
-      Этот чат
-    </CellHeader>
-  );
-
   return (
     <Panel mode="secondary">
       <Container>
         <Flex direction="column" gap={16}>
           {view === "chat" && focus ? (
             <>
-              {here && focus !== here.id && <NavRow />}
               <ProfilePicker chatId={focus} />
               <CellList mode="island">
                 <CellSimple
@@ -152,7 +161,6 @@ export default function App() {
             </>
           ) : (
             <>
-              {here && <NavRow />}
               {state.chats.length === 0 ? (
                 <Typography.Body>Чатов пока нет — напишите боту.</Typography.Body>
               ) : (
