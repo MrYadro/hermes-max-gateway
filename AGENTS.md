@@ -31,4 +31,6 @@ AGENTS, не в репо.
 - Профили-ассистенты: карта `_chat_profiles.json` + штамп `source.profile`
   в `MaxAdapter.build_source` (требует `multiplex_profiles`). Команда `/assistant`
   перехватывается в `_on_message` до group-gate.
+- Мини-апп `/max/app/*` живёт на webhook-порту (extra_routes); авторизация
+  initData-HMAC + MAX_ASSISTANT_ADMINS; dist коммитим, node_modules — нет.
 EOF
