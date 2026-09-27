@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
+  Check,
   Compass,
   Megaphone,
   MessageCircle,
@@ -20,8 +21,6 @@ import {
 } from "@maxhub/max-ui";
 import { api, CurrentChat, currentChat, StateResponse } from "./api";
 
-type ChatType = "dm" | "group" | "channel" | "unknown";
-
 const ICON_SIZE = 20;
 
 const TYPE_META: Record<string, { Icon: typeof User; label: string }> = {
@@ -34,7 +33,7 @@ const TYPE_META: Record<string, { Icon: typeof User; label: string }> = {
 const GRADIENTS = ["red", "orange", "green", "blue", "purple"] as const;
 type Gradient = (typeof GRADIENTS)[number];
 
-/** Детерминированный градиент по имени: у каждого профиля/чата свой стабильный цвет */
+/** Детерминированный градиент по имени: у каждого профиля свой стабильный цвет */
 function gradientOf(name: string): Gradient {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
@@ -84,7 +83,9 @@ export default function App() {
     return (
       <Panel mode="secondary" centeredX centeredY>
         <Typography.Body>{error}</Typography.Body>
-        <CellAction onClick={() => { setError(""); load(); }}>Повторить</CellAction>
+        <CellAction mode="secondary" onClick={() => { setError(""); load(); }}>
+          Повторить
+        </CellAction>
       </Panel>
     );
   }
@@ -101,124 +102,114 @@ export default function App() {
   const typeOf = (chatId: string) =>
     state.chats.find((c) => c.chat_id === chatId)?.chat_type ?? here?.type ?? "unknown";
 
+  /** Экран текущего чата: чистый выбор профиля — аватар, имя, серое описание */
   const ProfilePicker = ({ chatId }: { chatId: string }) => {
     const current = profileOf(chatId);
     return (
-      <>
-        {state!.profiles.map((p) => (
-          <CellAction
+      <CellList mode="island">
+        {state.profiles.map((p) => (
+          <CellSimple
             key={p.name}
-            before={<ProfileAvatar name={p.name} size={28} />}
-            showChevron={false}
-            disabled={busy || p.name === current}
-            onClick={() => pick(chatId, p.name)}
-          >
-            {p.name}
-            {p.description ? ` — ${p.description}` : ""}
-          </CellAction>
+            before={<ProfileAvatar name={p.name} size={44} />}
+            title={p.name}
+            subtitle={p.description || undefined}
+            after={p.name === current ? <Check size={20} strokeWidth={2} /> : undefined}
+            disabled={busy}
+            onClick={() => p.name !== current && pick(chatId, p.name)}
+          />
         ))}
-      </>
-    );
-  };
-
-  const ChatIsland = ({ chatId, type }: { chatId: string; type: string }) => {
-    const meta = TYPE_META[type] ?? TYPE_META.unknown;
-    return (
-      <CellList
-        mode="island"
-        header={
-          <CellHeader after={<Typography.Label>{meta.label}</Typography.Label>}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <meta.Icon size={ICON_SIZE} strokeWidth={2} />
-              {chatId}
-            </span>
-          </CellHeader>
-        }
-      >
-        <ProfilePicker chatId={chatId} />
       </CellList>
     );
   };
 
+  const NavRow = ({ chatId }: { chatId: string }) => (
+    <CellList mode="island">
+      <CellAction
+        mode="secondary"
+        height="compact"
+        before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />}
+        onClick={() => openChat(chatId)}
+      >
+        Этот чат
+      </CellAction>
+    </CellList>
+  );
+
   return (
     <Panel mode="secondary">
       <Container>
-
-        {view === "chat" ? (
+        {view === "chat" && focus ? (
           <>
-            {here && focus !== here.id && (
-              <CellList mode="island">
-                <CellAction before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />}
-                           onClick={() => openChat(here.id)}>
-                  Этот чат ({here.id})
-                </CellAction>
-              </CellList>
-            )}
-            {focus && <ChatIsland chatId={focus} type={typeOf(focus)} />}
+            {here && focus !== here.id && <NavRow chatId={here.id} />}
+            <ProfilePicker chatId={focus} />
             <CellList mode="island">
-              <CellAction before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />}
-                         onClick={() => setView("chats")}>
+              <CellAction
+                mode="secondary"
+                height="compact"
+                before={<Compass size={ICON_SIZE} strokeWidth={2} />}
+                onClick={() => setView("chats")}
+              >
                 Все чаты
-              </CellAction>
-              <CellAction before={<Compass size={ICON_SIZE} strokeWidth={2} />}
-                         onClick={() => setView("profiles")}>
-                Все профили
               </CellAction>
             </CellList>
           </>
         ) : view === "chats" ? (
           <>
-            {here && (
-              <CellList mode="island">
-                <CellAction before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />}
-                           onClick={() => openChat(here.id)}>
-                  Этот чат ({here.id})
-                </CellAction>
-              </CellList>
-            )}
+            {here && <NavRow chatId={here.id} />}
             {state.chats.length === 0 ? (
               <Typography.Body>Чатов пока нет — напишите боту.</Typography.Body>
             ) : (
-              <CellList mode="island" header={<CellHeader>Чаты</CellHeader>}>
+              <CellList mode="island">
                 {state.chats.map((c) => {
                   const meta = TYPE_META[c.chat_type] ?? TYPE_META.unknown;
-                  const profile = c.profile;
                   return (
                     <CellSimple
                       key={c.chat_id}
                       height="compact"
                       showChevron
-                      before={<ProfileAvatar name={profile} size={36} />}
+                      before={<ProfileAvatar name={c.profile} size={36} />}
                       title={c.chat_id}
                       subtitle={meta.label}
-                      after={<Typography.Label>{profile}</Typography.Label>}
+                      after={<Typography.Body variant="small">{c.profile}</Typography.Body>}
                       onClick={() => openChat(c.chat_id)}
                     />
                   );
                 })}
               </CellList>
             )}
+            <CellList mode="island">
+              <CellAction
+                mode="secondary"
+                height="compact"
+                before={<Compass size={ICON_SIZE} strokeWidth={2} />}
+                onClick={() => setView("profiles")}
+              >
+                Все профили
+              </CellAction>
+            </CellList>
           </>
         ) : (
           <>
-            {here && (
-              <CellList mode="island">
-                <CellAction before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />}
-                           onClick={() => openChat(here.id)}>
-                  Этот чат ({here.id})
-                </CellAction>
-              </CellList>
-            )}
+            {here && <NavRow chatId={here.id} />}
             <CellList mode="island" header={<CellHeader>Профили</CellHeader>}>
               {state.profiles.map((p) => (
                 <CellSimple
                   key={p.name}
                   before={<ProfileAvatar name={p.name} size={44} />}
                   title={p.name}
-                  subtitle={p.description || "—"}
-                  after={p.name === "default" ? <Typography.Label>базовый</Typography.Label> : undefined}
+                  subtitle={p.description || undefined}
                 />
               ))}
+            </CellList>
+            <CellList mode="island">
+              <CellAction
+                mode="secondary"
+                height="compact"
+                before={<ArrowLeft size={ICON_SIZE} strokeWidth={2} />}
+                onClick={() => setView("chats")}
+              >
+                Все чаты
+              </CellAction>
             </CellList>
           </>
         )}
