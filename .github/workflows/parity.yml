@@ -1,0 +1,80 @@
+name: parity
+
+# Автоматический паритет с OpenAPI-схемой MAX Bot API:
+# раз в неделю (и вручную) тянем свежую schema.yaml из официального репозитория,
+# обновляем vendored-фикстуру и гоняем сторожа:
+#   - схема не изменилась             → зелёный прогон;
+#   - изменилась, тесты зелёные       → фикстура коммитится в main;
+#   - изменилась, тесты красные       → PR с новой схемой и логом падений
+#     (какие константы подогнать — видно из diff тестов).
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # понедельник 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Зависимости тестов паритета (без hermes-agent)
+        run: pip install httpx pyyaml pytest pytest-asyncio respx
+
+      - name: Обновить vendored-схему
+        run: python scripts/update_schema.py
+
+      - name: Сторож паритета
+        id: tests
+        run: |
+          set +e
+          pytest -q tests/test_parity.py tests/test_schema_conformance.py tests/test_models.py tests/test_max_api.py > parity.log 2>&1
+          code=$?
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          cat parity.log
+          exit 0
+
+      - name: Схема изменилась?
+        id: diff
+        run: |
+          if git diff --quiet tests/fixtures/max-api-schema.yaml; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat tests/fixtures/max-api-schema.yaml
+          fi
+
+      - name: Закоммитить обновление схемы (паритет сохранён)
+        if: steps.diff.outputs.changed == 'true' && steps.tests.outputs.exit == '0'
+        run: |
+          git config user.name "parity-bot"
+          git config user.email "actions@github.com"
+          git add tests/fixtures/max-api-schema.yaml
+          git commit -m "chore: схема MAX обновлена, паритет сохранён (тесты зелёные)"
+          git push
+
+      - name: PR с новой схемой (нужна ручная подгонка констант)
+        if: steps.diff.outputs.changed == 'true' && steps.tests.outputs.exit != '0'
+        run: |
+          git config user.name "parity-bot"
+          git config user.email "actions@github.com"
+          git checkout -b parity/schema-update
+          git add tests/fixtures/max-api-schema.yaml parity.log
+          git commit -m "chore: свежая схема MAX — сторож паритета красный"
+          git push --force -u origin parity/schema-update
+          gh pr create --title "Схема MAX изменилась: обновить паритет" \
+            --body "Автопроверка паритета нашла расхождения со свежей схемой.
+          Падения сторожа — в parity.log и в логе джобы; константы — maxbot/models.py (UPDATE_TYPES) и вызовы MaxClient.
+          После правок смёржить PR: фикстура уже обновлена." \
+            --base main --head parity/schema-update || true
+        env:
+          GH_TOKEN: ${{ github.token }}
