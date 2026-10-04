@@ -1,7 +1,13 @@
-# Parity: hermes-max-gateway vs MAX Bot API (docs + live probes, 2026-09)
+# Parity: hermes-max-gateway vs MAX Bot API (OpenAPI-схема + live probes, 2026-10)
 
-Сравнение поверхности Bot API (документация dev.max.ru + живые пробы) и того,
-что реализует плагин. ✓ — реализовано, ◐ — частично, ✗ — не реализовано/невозможно.
+Сравнение поверхности Bot API и того, что реализует плагин. ✓ — реализовано,
+◐ — частично, ✗ — не реализовано/невозможно.
+
+Паритет машинно-проверяемый: официальная схема завендорена в
+`tests/fixtures/max-api-schema.yaml` и сторожится тестами
+(`test_parity.py` — типы событий по дискриминатору `Update`,
+`test_schema_conformance.py` — пути/параметры/enum/ключи ответов всех методов
+`MaxClient`). Обновление схемы → диф виден сразу.
 
 ## Методы API
 
@@ -10,18 +16,20 @@
 | `GET /me` | ✓ | connect: проверка бота |
 | `PATCH /me/commands` | ✓ | регистрация слеш-команд |
 | `GET /chats/{id}` | ✓ | `get_chat_info`, `max_group info` |
-| `PATCH /chats/{id}` | ✓ | `max_group rename` |
+| `PATCH /chats/{id}` | ✓ | `max_group rename` (гейт `change_chat_info`) |
 | `POST /chats/{id}/actions` | ✓ | typing, sending_photo/video/audio/file, **mark_seen** |
-| `GET/PUT/DELETE /chats/{id}/pin` | ✓ | `max_group pin/unpin/pinned` |
-| `GET /chats/{id}/members/me` | ✓ | `max_group my_permissions` |
-| `GET /chats/{id}/members`, `/admins` | ✓ | `max_group members/admins` |
-| `POST/DELETE /chats/{id}/members/admins` | ✓ | `max_group add_admin/remove_admin` |
-| `DELETE /chats/{id}/members/{uid}` | ✓ | `max_group kick` |
+| `GET/PUT/DELETE /chats/{id}/pin` | ✓ | `max_pin`, `max_group pin/unpin/pinned` (гейт `pin_message`) |
+| `GET /chats/{id}/members/me` | ✓ | `max_group my_permissions`; ленивое наполнение кэша прав |
+| `GET /chats/{id}/members` | ✓ | `max_group members` |
+| `GET /chats/{id}/members/admins` | ✓ | `max_group admins` (ключ `members` по схеме) |
+| `POST /chats/{id}/members/admins` | ✓ | `max_group add_admin` (гейт `add_admins`) |
+| `DELETE /chats/{id}/members/admins/{uid}` | ✓ | `max_group remove_admin` (гейт `add_remove_members`) |
+| `DELETE /chats/{id}/members?user_id=` | ✓ | `max_group kick` (гейт `add_remove_members`; path-варианта в схеме нет) |
 | `DELETE /chats/{id}/members/me` | ✓ | `max_group leave` |
 | `GET /chats` (список чатов) | ✗ | deprecated платформой с 06.2026 |
 | `POST /chats/{id}/members` (добавить) | ✗ | удаляется платформой с 30.09.2026 |
-| `GET/POST/DELETE /subscriptions` | ✓ | WebhookTransport |
-| `GET /updates` | ✓ | PollingTransport (по умолчанию) |
+| `GET/POST/DELETE /subscriptions` | ✓ | WebhookTransport; подписка всеми типами схемы, unsubscribe с required `url` |
+| `GET /updates` | ✓ | PollingTransport (по умолчанию); types = схема минус webhook-only |
 | `POST /uploads` | ✓ | curl-multipart; video/audio токен из слота, image/file — из загрузки |
 | `POST /messages` | ✓ | текст/markdown + все вложения |
 | `PUT /messages` | ✓ | правка: streaming-превью, снятие кнопок пустым массивом |
@@ -29,7 +37,7 @@
 | `GET /messages/{id}` | ✓ | догрузка вложений, reply-контекст, forward-контент |
 | `GET /videos/{token}` | ✓ | минимальная рендия + миниатюра для агента |
 | `POST /answers` | ✓ | toast на нажатие кнопки |
-| Комментарии каналов (GET/POST/PUT/DELETE) | ✓ | `max_channel` |
+| Комментарии каналов (GET/POST/PUT/DELETE) | ✓ | `max_channel`; GET читает ключ `messages` по схеме |
 
 ## Вложения: приём
 
@@ -64,6 +72,9 @@
 
 ## Обновления
 
+Подписка — полный паритет со схемой: webhook получает все типы из
+дискриминатора `Update`, polling — все минус webhook-only.
+
 | update_type | Плагин |
 |---|---|
 | message_created | ✓ |
@@ -72,7 +83,13 @@
 | message_edited | ✓ (повторная обработка; правки своих игнорируются) |
 | message_removed | ✓ (interrupt хода + заметка-ретракция в сессию) |
 | bot_added | ✓ (знакомство в группе) |
-| chat events | ✗ не подписаны |
+| bot_removed / dialog_removed | ✓ (purge кэшей чата, включая права) |
+| comment_created | ✓ (ветки комментариев каналов — thread-сессии) |
+| **bot_admin_permissions_changed** | ✓ (webhook-only; кэш `BOT_RIGHTS` + гейты прав, fail-open) |
+| chat_title_changed | ✓ (кэш названий `_known_chats` не устаревает) |
+| bot_stopped / dialog_cleared / dialog_muted / dialog_unmuted | ◐ подписаны, лог наблюдаемости |
+| user_added / user_removed | ◐ подписаны, лог наблюдаемости |
+| comment_edited / comment_removed | ◐ подписаны, лог наблюдаемости |
 
 ## Прочее
 
@@ -83,4 +100,5 @@
 | Reply-контекст (link.type=reply) | ✓ |
 | Упоминания в группах (@username оба формата) | ✓ |
 | Троттлинг 30 rps / 2 msg/сек | ✓ |
+| Гейт прав `ChatAdminPermission` (кэш по событию + lazy membership) | ✓ |
 | Формат html | ✗ (осознанно, только markdown) |
