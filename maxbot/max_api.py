@@ -143,7 +143,9 @@ class MaxClient:
         return bool(resp.get("success", True))
 
     async def get_updates(self, marker: Optional[int] = None, timeout: int = 90) -> Tuple[int, List[Update]]:
-        params = {"timeout": timeout, "types": "message_created,message_callback,bot_started,comment_created,comment_edited,comment_removed"}
+        # Полный паритет со схемой, кроме webhook-only типов (models.WEBHOOK_ONLY_TYPES)
+        from .models import POLLING_UPDATE_TYPES
+        params = {"timeout": timeout, "types": ",".join(POLLING_UPDATE_TYPES)}
         if marker is not None:
             params["marker"] = marker
         resp = await self._request("GET", "/updates", params=params, timeout=timeout + 5.0)
@@ -159,8 +161,10 @@ class MaxClient:
             body["secret"] = secret
         return await self._request("POST", "/subscriptions", json_body=body)
 
-    async def unsubscribe(self) -> bool:
-        resp = await self._request("DELETE", "/subscriptions")
+    async def unsubscribe(self, url: Optional[str] = None) -> bool:
+        # схема: DELETE /subscriptions требует query url
+        params = {"url": url} if url else None
+        resp = await self._request("DELETE", "/subscriptions", params=params)
         return bool(resp.get("success", True))
 
     async def answer_callback(self, callback_id: str, text: Optional[str] = None) -> bool:
@@ -217,7 +221,9 @@ class MaxClient:
         return mid
 
     async def get_comments(self, post_id: str) -> list:
-        return list((await self._request("GET", f"/messages/{post_id}/comments")).get("comments") or [])
+        # схема CommentMessageList: ключ "messages" (fallback для старого поведения API)
+        resp = await self._request("GET", f"/messages/{post_id}/comments")
+        return list(resp.get("messages") or resp.get("comments") or [])
 
     async def get_comment(self, post_id: str, comment_id: str) -> dict:
         return await self._request("GET", f"/messages/{post_id}/comments/{comment_id}")
@@ -246,7 +252,9 @@ class MaxClient:
         return list((await self._request("GET", f"/chats/{chat_id}/members")).get("members") or [])
 
     async def get_admins(self, chat_id: int) -> list:
-        return list((await self._request("GET", f"/chats/{chat_id}/members/admins")).get("admins") or [])
+        # схема: GET .../members/admins → ChatMembersList (ключ "members", не "admins")
+        resp = await self._request("GET", f"/chats/{chat_id}/members/admins")
+        return list(resp.get("members") or resp.get("admins") or [])
 
     async def add_admin(self, chat_id: int, user_id: int,
                         permissions: Optional[list] = None) -> bool:
@@ -259,7 +267,9 @@ class MaxClient:
         return bool(resp.get("success", True))
 
     async def kick_member(self, chat_id: int, user_id: int) -> bool:
-        resp = await self._request("DELETE", f"/chats/{chat_id}/members/{user_id}")
+        # схема: DELETE /chats/{chatId}/members с required query user_id (path-варианта нет)
+        resp = await self._request("DELETE", f"/chats/{chat_id}/members",
+                                   params={"user_id": user_id})
         return bool(resp.get("success", True))
 
     async def leave_chat(self, chat_id: int) -> bool:

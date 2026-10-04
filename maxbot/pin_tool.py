@@ -46,6 +46,12 @@ _PIN_SCHEMA = {
 }
 
 
+async def _ensure_pin_allowed(client, chat_id: int) -> Optional[str]:
+    """Гейт записи (pin/unpin) по праву pin_message — см. maxbot.rights."""
+    from .rights import require_right
+    return await require_right(client, chat_id, "pin_message")
+
+
 async def _max_pin_handler(args: Dict[str, Any], **kwargs) -> str:
     action = str(args.get("action") or "").strip()
     if action not in ("pin", "unpin", "pinned"):
@@ -65,9 +71,15 @@ async def _max_pin_handler(args: Dict[str, Any], **kwargs) -> str:
                 mid = str(args.get("message_id") or "").strip()
                 if not mid:
                     return "❌ Для pin нужен message_id."
+                denied = await _ensure_pin_allowed(client, int(chat_id))
+                if denied:
+                    return denied
                 ok = await client.pin_message(int(chat_id), mid)
                 return "✅ Закреплено." if ok else "⚠️ Не удалось закрепить."
             if action == "unpin":
+                denied = await _ensure_pin_allowed(client, int(chat_id))
+                if denied:
+                    return denied
                 ok = await client.unpin_message(int(chat_id))
                 return "✅ Откреплено." if ok else "⚠️ Не удалось открепить."
             msg = await client.get_pinned_message(int(chat_id))

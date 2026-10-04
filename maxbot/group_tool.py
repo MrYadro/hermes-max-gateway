@@ -72,6 +72,15 @@ _SCHEMA = {
     },
 }
 
+# Пишущие действия → требуемое право бота (ChatAdminPermission из схемы MAX)
+_RIGHTS_BY_ACTION = {
+    "pin": "pin_message", "unpin": "pin_message",
+    "add_admin": "add_admins",
+    "remove_admin": "add_remove_members",
+    "kick": "add_remove_members",
+    "rename": "change_chat_info",
+}
+
 
 def _session_chat_id() -> Optional[int]:
     with contextlib.suppress(Exception):
@@ -99,14 +108,22 @@ async def _max_group_handler(args: Dict[str, Any], **kwargs) -> str:
     base = get_scoped_secret("MAX_API_BASE", "") or None
 
     async with MaxClient(token, base_url=base) as client:
+        from .rights import require_right
+
         try:
             if action == "pin":
                 mid = str(args.get("message_id") or "")
                 if not mid:
                     return "❌ Для pin укажите message_id."
+                denied = await require_right(client, chat_id, _RIGHTS_BY_ACTION[action])
+                if denied:
+                    return denied
                 ok = await client.pin_message(chat_id, mid)
                 return "✅ Сообщение закреплено." if ok else "⚠️ MAX не подтвердил закрепление."
             if action == "unpin":
+                denied = await require_right(client, chat_id, _RIGHTS_BY_ACTION[action])
+                if denied:
+                    return denied
                 return "✅ Закрепление снято." if await client.unpin_message(chat_id) \
                     else "⚠️ MAX не подтвердил."
             if action == "pinned":
@@ -123,18 +140,27 @@ async def _max_group_handler(args: Dict[str, Any], **kwargs) -> str:
                 uid = args.get("user_id")
                 if not uid:
                     return "❌ Для add_admin укажите user_id."
+                denied = await require_right(client, chat_id, _RIGHTS_BY_ACTION[action])
+                if denied:
+                    return denied
                 ok = await client.add_admin(chat_id, int(uid), args.get("permissions"))
                 return f"✅ Пользователь {uid} назначен админом." if ok else "⚠️ MAX отказал."
             if action == "remove_admin":
                 uid = args.get("user_id")
                 if not uid:
                     return "❌ Для remove_admin укажите user_id."
+                denied = await require_right(client, chat_id, _RIGHTS_BY_ACTION[action])
+                if denied:
+                    return denied
                 ok = await client.remove_admin(chat_id, int(uid))
                 return f"✅ Пользователь {uid} больше не админ." if ok else "⚠️ MAX отказал."
             if action == "kick":
                 uid = args.get("user_id")
                 if not uid:
                     return "❌ Для kick укажите user_id."
+                denied = await require_right(client, chat_id, _RIGHTS_BY_ACTION[action])
+                if denied:
+                    return denied
                 ok = await client.kick_member(chat_id, int(uid))
                 return f"✅ Пользователь {uid} исключён." if ok else "⚠️ MAX отказал."
             if action == "leave":
@@ -145,6 +171,9 @@ async def _max_group_handler(args: Dict[str, Any], **kwargs) -> str:
                 title = str(args.get("title") or "").strip()
                 if not title and not args.get("description"):
                     return "❌ Для rename укажите title и/или description."
+                denied = await require_right(client, chat_id, _RIGHTS_BY_ACTION[action])
+                if denied:
+                    return denied
                 fields = {}
                 if title:
                     fields["title"] = title

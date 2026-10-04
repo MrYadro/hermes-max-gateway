@@ -53,6 +53,25 @@ def test_parse_bot_started():
     assert u.chat_id == 900 and u.user.user_id == 5
 
 
+def test_parse_bot_admin_permissions_changed():
+    """Payload по BotAdminPermissionsChangedUpdate из OpenAPI-схемы."""
+    u = parse_update({
+        "update_type": "bot_admin_permissions_changed", "timestamp": 1737500130100,
+        "chat_id": -200, "user_id": 7, "bot_id": 999, "is_channel": True,
+        "is_admin": True, "permissions": ["read_all_messages", "pin_message"]})
+    assert u.chat_id == -200 and u.user_id == 7 and u.bot_id == 999
+    assert u.is_channel is True and u.is_admin is True
+    assert u.permissions == ["read_all_messages", "pin_message"]
+
+
+def test_parse_bot_admin_permissions_changed_revoked():
+    """Снятие прав: permissions может отсутствовать (nullable в схеме)."""
+    u = parse_update({"update_type": "bot_admin_permissions_changed",
+                      "chat_id": -200, "user_id": 7, "bot_id": 999,
+                      "is_channel": False, "is_admin": False})
+    assert u.is_admin is False and u.permissions == []
+
+
 def test_parse_tolerant_to_unknown_fields():
     d = _message_created()
     d["message"]["unknown_future_field"] = {"a": 1}

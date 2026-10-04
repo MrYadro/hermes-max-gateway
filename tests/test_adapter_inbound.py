@@ -623,6 +623,50 @@ async def test_message_removed_sends_retraction_note():
     assert "удалил" in notes[0].text and "gateway_session_key" in notes[0].metadata
 
 
+async def test_bot_admin_permissions_granted_remembered():
+    """bot_admin_permissions_changed: права админа попадают в общий стейт (читает pin_tool)."""
+    from maxbot import state
+
+    adapter = make_adapter()
+    state.BOT_RIGHTS.clear()
+    d = {"update_type": "bot_admin_permissions_changed", "chat_id": -200,
+         "user_id": 7, "bot_id": 999, "is_channel": True, "is_admin": True,
+         "permissions": ["read_all_messages", "pin_message"], "timestamp": 1}
+    await adapter._handle_update(parse_update(d))
+    rights = state.bot_rights("-200")
+    assert rights and rights["is_admin"] is True
+    assert rights["permissions"] == ["read_all_messages", "pin_message"]
+    assert adapter._client.sent == []  # событие молчаливое
+
+
+async def test_bot_admin_permissions_revoked_remembered():
+    from maxbot import state
+
+    adapter = make_adapter()
+    state.BOT_RIGHTS.clear()
+    d = {"update_type": "bot_admin_permissions_changed", "chat_id": -200,
+         "user_id": 7, "bot_id": 999, "is_channel": False, "is_admin": False,
+         "timestamp": 1}
+    await adapter._handle_update(parse_update(d))
+    rights = state.bot_rights("-200")
+    assert rights and rights["is_admin"] is False and rights["permissions"] == []
+
+
+async def test_chat_title_changed_refreshes_known_title(monkeypatch, tmp_path):
+    """chat_title_changed: кэш названий чатов (/assistant) не устаревает при переименовании."""
+    from maxbot import profile_switch
+
+    adapter = make_adapter()
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
+    profile_switch.remember_chat(tmp_path, "-200", "group", title="Старое название")
+    d = {"update_type": "chat_title_changed", "chat_id": -200,
+         "user": {"user_id": 5, "name": "Аня"}, "title": "Новое название", "timestamp": 1}
+    await adapter._handle_update(parse_update(d))
+    entry = profile_switch.known_chats(tmp_path)["-200"]
+    assert entry["title"] == "Новое название"
+    assert entry["type"] == "group"  # тип чата не затёрли
+
+
 async def test_bot_started_greeting_single_nested_attachments():
     """attachments должен быть [att], а не [[att]] — двойной массив даёт 400."""
     adapter = make_adapter()

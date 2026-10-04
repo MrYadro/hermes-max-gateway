@@ -324,11 +324,18 @@ class TestPinTool:
         calls = []
 
         class _FakeClient:
+            def __init__(self):
+                self.membership_calls = 0
+
             async def __aenter__(self):
                 return self
 
             async def __aexit__(self, *a):
                 return False
+
+            async def get_membership(self, chat_id):
+                self.membership_calls += 1
+                return {"is_admin": True, "permissions": ["pin_message"]}
 
             async def pin_message(self, chat_id, mid):
                 calls.append(("pin", chat_id, mid))
@@ -351,6 +358,8 @@ class TestPinTool:
 
         monkeypatch.setattr(MA, "MaxClient", _FakeMaxClient)
         monkeypatch.setattr(P, "_secret", lambda n, d="": "T" if "TOKEN" in n else d)
+        from maxbot import state
+        state.BOT_RIGHTS.clear()  # гейт идёт в membership только при пустом кэше
         r = await P._max_pin_handler({"action": "pin", "chat_id": 100,
                                       "message_id": "mid.1"})
         assert "Закреплено" in r

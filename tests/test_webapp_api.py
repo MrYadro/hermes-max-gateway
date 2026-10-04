@@ -271,7 +271,7 @@ async def test_webhook_transport_serves_app_routes(tmp_path, monkeypatch):
         async def subscribe(self, url, types, secret=None):
             self.subscribed = (url, types, secret)
 
-        async def unsubscribe(self):
+        async def unsubscribe(self, url=None):
             pass
 
     fc = FakeClient()

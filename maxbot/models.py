@@ -2,6 +2,22 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+# Типы событий — полный паритет с OpenAPI-схемой MAX (tests/fixtures/max-api-schema.yaml,
+# discriminator объекта Update). Паритет проверяет tests/test_parity.py: при обновлении
+# схемы диф покажет, что добавить/убрать здесь.
+UPDATE_TYPES = [
+    "message_created", "message_callback", "bot_started", "bot_added", "bot_removed",
+    "bot_stopped", "chat_title_changed", "dialog_cleared", "dialog_muted", "dialog_unmuted",
+    "dialog_removed", "message_edited", "message_removed", "comment_created",
+    "comment_edited", "comment_removed", "user_added", "user_removed",
+    "bot_admin_permissions_changed",
+]
+# События, которые API отдаёт только через Webhook (changelog API MAX);
+# в types для long polling их не просим.
+WEBHOOK_ONLY_TYPES = frozenset({"bot_admin_permissions_changed"})
+WEBHOOK_UPDATE_TYPES = tuple(UPDATE_TYPES)
+POLLING_UPDATE_TYPES = tuple(t for t in UPDATE_TYPES if t not in WEBHOOK_ONLY_TYPES)
+
 
 @dataclass
 class User:
@@ -54,8 +70,15 @@ class Update:
     marker: Optional[int] = None
     message: Optional[Message] = None
     callback: Optional[Callback] = None
-    chat_id: Optional[int] = None  # bot_started
+    chat_id: Optional[int] = None  # bot_started, bot_admin_permissions_changed
     user: Optional[User] = None    # bot_started
+    # bot_admin_permissions_changed (OpenAPI: BotAdminPermissionsChangedUpdate);
+    # user_id также приходит плоским в message_removed
+    user_id: Optional[int] = None
+    bot_id: Optional[int] = None
+    is_channel: Optional[bool] = None
+    is_admin: Optional[bool] = None
+    permissions: List[str] = field(default_factory=list)
     raw: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -94,4 +117,7 @@ def parse_update(d: Dict[str, Any]) -> Update:
                             raw=cb if isinstance(cb, dict) else {})
     return Update(update_type=d.get("update_type") or "", marker=d.get("marker"), raw=d,
                   message=parse_message(d["message"]) if d.get("message") else None,
-                  callback=callback, chat_id=d.get("chat_id"), user=_user(d.get("user")))
+                  callback=callback, chat_id=d.get("chat_id"), user=_user(d.get("user")),
+                  user_id=d.get("user_id"), bot_id=d.get("bot_id"),
+                  is_channel=d.get("is_channel"), is_admin=d.get("is_admin"),
+                  permissions=[str(p) for p in d.get("permissions") or []])

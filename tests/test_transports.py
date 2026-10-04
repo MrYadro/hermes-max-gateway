@@ -102,8 +102,8 @@ class FakeSubClient:
         self.subscribed = (url, tuple(types), secret)
         return {}
 
-    async def unsubscribe(self):
-        self.unsubscribed = True
+    async def unsubscribe(self, url=None):
+        self.unsubscribed = url
         return True
 
 
@@ -149,4 +149,17 @@ async def test_webhook_stop_unsubscribes():
     t, fc, http, _ = await _make_client()
     await t.stop()
     await http.close()
-    assert fc.unsubscribed is True
+    assert fc.unsubscribed == "https://pub.example/hook"  # схема: url обязателен
+
+
+async def test_webhook_default_types_full_parity():
+    """Без явного списка подписываемся на все типы схемы (вкл. bot_admin_permissions_changed)."""
+    from maxbot.models import WEBHOOK_UPDATE_TYPES
+
+    fc = FakeSubClient()
+    t = WebhookTransport(fc, url="https://pub.example/hook", port=0, secret="S1")
+    await t.start(lambda u: None)
+    await t.stop()
+    assert fc.subscribed[1] == tuple(WEBHOOK_UPDATE_TYPES)
+    assert "bot_admin_permissions_changed" in fc.subscribed[1]
+    assert "comment_created" in fc.subscribed[1]  # регресс: раньше webhook-список его терял

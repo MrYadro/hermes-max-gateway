@@ -386,8 +386,6 @@ class MaxAdapter(BasePlatformAdapter):
                     self._client, url=url,
                     port=int(_env_or_extra(self._extra, "MAX_WEBHOOK_PORT", "webhook_port", 8443)),
                     secret=_env_or_extra(self._extra, "MAX_WEBHOOK_SECRET", "webhook_secret") or None,
-                    update_types=["message_created", "message_callback", "bot_started",
-                                 "bot_added", "message_edited", "message_removed"],
                     **extra)
             else:
                 self._transport = self._transport or self._make_transport()
@@ -835,7 +833,9 @@ class MaxAdapter(BasePlatformAdapter):
 
     def _purge_chat_state(self, chat_id: str) -> None:
         """bot_removed/dialog_removed: чистим кэши чата."""
+        from . import state
         self._chat_users.pop(chat_id, None)
+        state.BOT_RIGHTS.pop(str(chat_id), None)  # права неактуальны — бота в чате нет
         if self._interactive:
             self._interactive.picker_state.pop(chat_id, None)
             self._interactive.model_picker_state.pop(chat_id, None)
@@ -911,6 +911,32 @@ class MaxAdapter(BasePlatformAdapter):
                         await self.handle_message(note)
             elif update.update_type == "comment_created" and update.message:
                 await self._on_comment(update)
+            elif update.update_type == "bot_admin_permissions_changed":
+                # Webhook-only событие (схема BotAdminPermissionsChangedUpdate).
+                # Молчаливое: обновляем общий стейт, им пользуется гейт pin_tool.
+                from . import state
+                chat_id = update.chat_id
+                if chat_id:
+                    state.remember_bot_rights(
+                        str(chat_id), is_admin=bool(update.is_admin),
+                        permissions=update.permissions)
+                    if update.is_admin:
+                        logger.info("max: права админа бота chat=%s: %s",
+                                    chat_id, ", ".join(update.permissions) or "—")
+                    else:
+                        logger.warning(
+                            "max: права админа бота сняты chat=%s "
+                            "(без read_all_messages бот не видит сообщения в группах)", chat_id)
+            elif update.update_type == "chat_title_changed":
+                # схема: chat_id, user, title — держим кэш названий чатов свежим
+                # (список /assistant; устаревал в т.ч. после нашего же rename)
+                title = str((update.raw.get("title") or "")).strip()
+                chat_id = update.chat_id
+                if chat_id and title:
+                    from .profile_switch import known_chats, remember_chat
+                    home = _plugin_home()
+                    ctype = known_chats(home).get(str(chat_id), {}).get("type") or "unknown"
+                    remember_chat(home, str(chat_id), ctype, title=title)
             elif update.update_type in ("bot_removed", "dialog_removed"):
                 if update.chat_id:
                     self._purge_chat_state(str(update.chat_id))

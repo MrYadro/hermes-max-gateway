@@ -131,6 +131,19 @@ async def test_edit_and_delete_use_query_message_id():
 
 
 @respx.mock
+async def test_get_updates_types_polling_parity():
+    """Polling: все типы схемы, кроме webhook-only (регресс: раньше терял bot_added и др.)."""
+    route = respx.get(f"{BASE}/updates").mock(return_value=httpx.Response(
+        200, json={"updates": [], "marker": 1}))
+    async with client() as c:
+        await c.get_updates()
+    types = route.calls.last.request.url.params["types"]
+    assert "bot_added" in types and "comment_created" in types
+    assert "message_removed" in types and "dialog_removed" in types
+    assert "bot_admin_permissions_changed" not in types  # webhook-only по changelog
+
+
+@respx.mock
 async def test_subscribe_sends_secret_and_types():
     route = respx.post(f"{BASE}/subscriptions").mock(return_value=httpx.Response(200, json={}))
     async with client() as c:

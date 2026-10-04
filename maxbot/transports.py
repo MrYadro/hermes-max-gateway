@@ -111,10 +111,10 @@ class WebhookTransport:
         self._port = port
         self._secret = secret
         self._path = path
-        # bot_removed/dialog_removed: _purge_chat_state; comment_created: ветки каналов
-        self._types = update_types or ["message_created", "message_callback", "bot_started",
-                                       "bot_added", "message_edited", "message_removed",
-                                       "comment_created", "bot_removed", "dialog_removed"]
+        # По умолчанию — полный паритет со схемой MAX (models.UPDATE_TYPES):
+        # необработанные типы логируются в _handle_update (наблюдаемость).
+        from .models import WEBHOOK_UPDATE_TYPES
+        self._types = update_types or list(WEBHOOK_UPDATE_TYPES)
         self._runner = None
         self._app = None
         self._on_update: Optional[OnUpdate] = None
@@ -140,7 +140,8 @@ class WebhookTransport:
 
     async def stop(self) -> None:
         with contextlib_suppress():
-            await self._client.unsubscribe()
+            # схема: DELETE /subscriptions требует query url
+            await self._client.unsubscribe(self._url)
         if self._runner:
             await self._runner.cleanup()
             self._runner = None
