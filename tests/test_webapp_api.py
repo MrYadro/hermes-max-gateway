@@ -294,8 +294,6 @@ async def test_webhook_transport_serves_app_routes(tmp_path, monkeypatch):
 
 async def test_webhook_connect_reads_secret_from_env(monkeypatch):
     """connect() в webhook-режиме читает MAX_WEBHOOK_SECRET и передаёт в транспорт."""
-    import asyncio
-
     import pytest as _pytest
 
     _pytest.importorskip("gateway.platforms.base")
