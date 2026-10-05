@@ -271,11 +271,12 @@ async def test_webhook_transport_serves_app_routes(tmp_path, monkeypatch):
         async def subscribe(self, url, types, secret=None):
             self.subscribed = (url, types, secret)
 
-        async def unsubscribe(self, url=None):
+        async def unsubscribe(self):
             pass
 
     fc = FakeClient()
     tr = WebhookTransport(fc, url="https://synthetic.example/hook", port=0,
+                          secret="synthetic-webhook-secret",
                           extra_routes=wa.build_routes(None))
     await tr.start(lambda u: None)
     try:
@@ -285,5 +286,52 @@ async def test_webhook_transport_serves_app_routes(tmp_path, monkeypatch):
             async with http.get(f"{base}/max/app/state?dev_user_id=13") as r:
                 assert r.status == 200
                 assert (await r.json())["me"]["user_id"] == 13
+        # подписка уходит с тем секретом, что передан в конструктор
+        assert fc.subscribed[2] == "synthetic-webhook-secret"
     finally:
         await tr.stop()
+
+
+async def test_webhook_connect_reads_secret_from_env(monkeypatch):
+    """connect() в webhook-режиме читает MAX_WEBHOOK_SECRET и передаёт в транспорт."""
+    import asyncio
+
+    import pytest as _pytest
+
+    _pytest.importorskip("gateway.platforms.base")
+    from maxbot import adapter as A
+
+    monkeypatch.setenv("MAX_UPDATES_MODE", "webhook")
+    monkeypatch.setenv("MAX_WEBHOOK_URL", "https://synthetic.example/hook")
+    monkeypatch.setenv("MAX_WEBHOOK_PORT", "0")
+    monkeypatch.setenv("MAX_WEBHOOK_SECRET", "env-secret-42")
+
+    created = {}
+
+    class _FakeTransport:
+        def __init__(self, client, *, url, port, secret=None, **kw):
+            created.update(url=url, port=port, secret=secret)
+
+        async def start(self, cb):
+            pass
+
+        async def stop(self):
+            pass
+
+    from maxbot import transports as T
+    monkeypatch.setattr(T, "WebhookTransport", _FakeTransport)
+    from types import SimpleNamespace as NS
+    me = NS(user_id=999, username="synthetic_bot", name="Synthetic")
+    monkeypatch.setattr(A.MaxClient, "get_me", classmethod(lambda cls, *a, **k: _me()))
+    async def _me():
+        return me
+
+    class _Cfg:
+        extra = {}
+
+    ad = A.MaxAdapter(_Cfg(), client=None, transport=None)
+    ad._token = "synthetic-token"
+    ok = await ad.connect()
+    assert ok is not False
+    assert created.get("secret") == "env-secret-42"
+    assert created.get("url") == "https://synthetic.example/hook"
