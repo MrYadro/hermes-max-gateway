@@ -1,7 +1,8 @@
 """Инструмент агента max_contact — отправить контакт (vCard) в MAX."""
-import contextlib
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
+
+from .state import secret, session_chat_id
 
 logger = logging.getLogger(__name__)
 
@@ -26,38 +27,21 @@ def _build_vcf(name: str, phone: str) -> str:
             f"TEL;TYPE=cell:{phone}\r\nEND:VCARD\r\n")
 
 
-def _secret(name: str, default: str = "") -> str:
-    with contextlib.suppress(Exception):
-        from gateway.platforms._shared import get_scoped_secret
-        return get_scoped_secret(name, default) or default
-    return default
-
-
-def _session_chat_id() -> Optional[int]:
-    with contextlib.suppress(Exception):
-        from gateway.session_context import get_session_env
-        if (get_session_env("HERMES_SESSION_PLATFORM") or "").lower() == "max":
-            raw = (get_session_env("HERMES_SESSION_CHAT_ID") or "").strip()
-            if raw.lstrip("-").isdigit():
-                return int(raw)
-    return None
-
-
 async def _max_contact_handler(args: Dict[str, Any], **kwargs) -> str:
     name = str(args.get("name") or "").strip()
     phone = str(args.get("phone") or "").strip()
     if not name or not phone:
         return "❌ Нужны name и phone."
-    chat_id = args.get("chat_id") or _session_chat_id()
+    chat_id = args.get("chat_id") or session_chat_id()
     if chat_id is None:
         return ("❌ Не удалось определить chat_id. Укажите его параметром chat_id "
                 "(числовой ID чата MAX), либо вызывайте из чата MAX.")
-    token = _secret("MAX_ACCESS_TOKEN", "")
+    token = secret("MAX_ACCESS_TOKEN", "")
     if not token:
         return "❌ MAX_ACCESS_TOKEN не настроен."
 
     from .max_api import MaxApiError, MaxClient
-    async with MaxClient(token, base_url=_secret("MAX_API_BASE", "") or None) as client:
+    async with MaxClient(token, base_url=secret("MAX_API_BASE", "") or None) as client:
         try:
             await client.send_message(
                 int(chat_id), "",

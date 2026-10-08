@@ -624,7 +624,7 @@ async def test_message_removed_sends_retraction_note():
 
 
 async def test_bot_admin_permissions_granted_remembered():
-    """bot_admin_permissions_changed: права админа попадают в общий стейт (читает pin_tool)."""
+    """bot_admin_permissions_changed: права админа попадают в общий стейт (читает group_tool)."""
     from maxbot import state
 
     adapter = make_adapter()
@@ -748,6 +748,36 @@ async def test_greeting_button_flashes_progress_then_restores():
     assert edits[0][1].startswith("⏳ Выполняю /new")
     assert edits[-1][1] == _GREETING
     assert edits[-1][2]  # клавиатура возвращена
+
+
+async def test_bot_removed_purges_all_chat_state():
+    """bot_removed: чистим ВСЕ карты чата — иначе служебный mid из старой
+    жизни бота удалится при первой же правке, а черновик зависнет навсегда."""
+    adapter = make_adapter()
+    adapter._chat_users["100"] = ("42", "Иван")
+    adapter._svc_state["100"] = {"mid": "mid.1", "tool": "⚙️ x", "stale": True}
+    adapter._drafts[("100", 1)] = {"message_id": "mid.2", "last": 0}
+    adapter._greeting_mids["100"] = "mid.3"
+    adapter._mid_sessions["m9"] = ("sess", "100", None)
+    adapter._interactive = None  # пикеров нет — проверяем только карты адаптера
+    await adapter._handle_update(parse_update(
+        {"update_type": "bot_removed", "chat_id": 100, "marker": 2}))
+    assert adapter._chat_users == {} and adapter._svc_state == {}
+    assert adapter._drafts == {} and adapter._greeting_mids == {}
+    assert adapter._mid_sessions == {}
+
+
+async def test_mid_sessions_capped(monkeypatch):
+    """Карта mid→сессия ограничена сверху: удаление сообщений редкое,
+    а без кэпа карта росла бы всю жизнь гейтвея."""
+    import maxbot.adapter as A
+
+    monkeypatch.setattr(A, "_MID_SESSIONS_CAP", 2, raising=False)
+    adapter = make_adapter()
+    adapter.handle_message = _noop_async()
+    for mid in ("m1", "m2", "m3"):
+        await adapter._handle_update(_upd_message(mid=mid))
+    assert list(adapter._mid_sessions) == ["m2", "m3"]  # старейший вытеснен
 
 
 async def test_inbound_underscore_command_roundtrip():

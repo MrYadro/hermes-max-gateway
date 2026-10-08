@@ -25,8 +25,8 @@ class FakeClient:
 def _tool_with_client(monkeypatch, client):
     import maxbot.sticker_tool as T
 
-    monkeypatch.setattr(T, "_secret", lambda name, default="": "TOKEN")
-    monkeypatch.setattr(T, "_session_chat_id", lambda: 555)
+    monkeypatch.setattr(T, "secret", lambda name, default="": "TOKEN")
+    monkeypatch.setattr(T, "session_chat_id", lambda: 555)
     import maxbot.max_api as api
     monkeypatch.setattr(api, "MaxClient", lambda *a, **kw: client)
     return T

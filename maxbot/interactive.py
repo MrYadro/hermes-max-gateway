@@ -176,11 +176,56 @@ class InteractiveDispatcher:
         await self.api.api_send(chat_id, "📄 Страницы:", [keyboard_attachment(rows)])
 
     # ── диспетчер нажатий ──
+    @staticmethod
+    def _known_chat_type(chat_id: str) -> Optional[str]:
+        """Тип чата из карты известных чатов (адаптер пишет её на каждом входящем);
+        групповые chat_id MAX тоже числовые — догадка по цифрам путает dm/group."""
+        try:
+            from .adapter import _plugin_home
+            from .profile_switch import known_chats
+            return known_chats(_plugin_home()).get(chat_id, {}).get("type")
+        except Exception:
+            return None
+
+    async def _click_allowed(self, cb: Callback) -> bool:
+        """Клик по кнопке — тот же allowlist, что и текстовые сообщения:
+        без проверки участник группы вне MAX_ALLOWED_USERS смог бы
+        «Одобрить» опасную команду кнопкой. Fail-closed при ошибке проверки."""
+        check = getattr(getattr(self.api, "gateway_runner", None),
+                        "_is_user_authorized_for_source", None)
+        if not callable(check):
+            return True  # раннера нет (юнит-тесты/standalone) — прежнее поведение
+        parts = (cb.payload or "").split(":")
+        chat_id = parts[1] if len(parts) > 1 and parts[1].lstrip("-").isdigit() else (
+            str(cb.message.chat_id) if cb.message and cb.message.chat_id else "")
+        if not chat_id:
+            return False
+        user = cb.user
+        user_id = str(user.user_id) if user and getattr(user, "user_id", None) else ""
+        chat_type = self._known_chat_type(chat_id)
+        if chat_type not in ("dm", "group"):  # channel/unknown — эвристика
+            chat_type = "dm" if chat_id.isdigit() else "group"
+        source = self.api.build_source(
+            chat_id=chat_id, chat_type=chat_type,
+            user_id=user_id, user_name=(user.name if user else "") or "")
+        try:
+            return bool(check(source))
+        except Exception:
+            logger.warning("max: авторизация клика упала — отказ (fail closed)",
+                           exc_info=True)
+            return False
+
     async def dispatch(self, cb: Callback) -> None:
         payload = cb.payload or ""
         logger.info("max: callback payload=%r chat=%s user=%s", payload,
                     cb.message.chat_id if cb.message else None,
                     cb.message.sender.user_id if cb.message and cb.message.sender else None)
+        if not await self._click_allowed(cb):
+            # gc: без тоста: /answers перезаписал бы текст приветствия кнопкой-строкой
+            if not payload.startswith("gc:"):
+                with contextlib.suppress(Exception):
+                    await self.api.api_answer(cb.callback_id, "⛔ Нет доступа.")
+            return
         try:
             if payload.startswith("ea:"):
                 await self._on_exec_approval(cb)

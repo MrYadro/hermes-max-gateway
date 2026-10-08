@@ -1,13 +1,36 @@
 """Общий стейт плагина: коды виденных стикеров, права бота-админа (адаптер пишет, инструменты читают)."""
+import contextlib
 import time
 from typing import Any, Dict, List, Optional
+
+
+def secret(name: str, default: str = "") -> str:
+    """Scoped-секрет ядра → os.environ → default (инструментам не нужен gateway-конфиг)."""
+    with contextlib.suppress(Exception):
+        from gateway.platforms._shared import get_scoped_secret
+        return get_scoped_secret(name, default) or default
+    with contextlib.suppress(Exception):
+        import os
+        return os.environ.get(name, default)
+    return default
+
+
+def session_chat_id() -> Optional[int]:
+    """chat_id текущей MAX-сессии из env сессии ядра; None вне MAX-сессии."""
+    with contextlib.suppress(Exception):
+        from gateway.session_context import get_session_env
+        if (get_session_env("HERMES_SESSION_PLATFORM") or "").lower() == "max":
+            raw = (get_session_env("HERMES_SESSION_CHAT_ID") or "").strip()
+            if raw.lstrip("-").isdigit():
+                return int(raw)
+    return None
 
 SEEN_STICKERS: List[Dict] = []  # {"code": str, "ts": float}
 _MAX_REMEMBERED = 32
 
 # Права бота-админа по чатам: {"chat_id": {"is_admin": bool, "permissions": [...]}}
 # Пишется адаптером по событию bot_admin_permissions_changed и ленивым fetch
-# в pin_tool (GET /chats/{id}/members/me); читается гейтами инструментов.
+# в group_tool (GET /chats/{id}/members/me); читается гейтами инструментов.
 BOT_RIGHTS: Dict[str, Dict[str, Any]] = {}
 
 

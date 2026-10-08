@@ -3,9 +3,10 @@ import contextlib
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+from functools import lru_cache
+from typing import Any, Dict
 
-from .state import recent_stickers
+from .state import recent_stickers, secret, session_chat_id
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +33,13 @@ _STICKER_SCHEMA = {
 }
 
 
-def _catalog() -> list:
+@lru_cache(maxsize=1)
+def _catalog() -> tuple:
+    # статичный файл каталога; читается на каждый входящий стикер — кэшируем
     path = os.path.join(os.path.dirname(__file__), "sticker_catalog.json")
     with contextlib.suppress(OSError, ValueError):
-        return json.load(open(path, encoding="utf-8"))
-    return []
+        return tuple(json.load(open(path, encoding="utf-8")))
+    return ()
 
 
 def _find_stickers(query: str, limit: int = 8) -> list:
@@ -60,23 +63,6 @@ def describe_sticker(code: str):
     for item in _catalog():
         if item.get("code") == code:
             return item
-    return None
-
-
-def _secret(name: str, default: str = "") -> str:
-    with contextlib.suppress(Exception):
-        from gateway.platforms._shared import get_scoped_secret
-        return get_scoped_secret(name, default) or default
-    return default
-
-
-def _session_chat_id() -> Optional[int]:
-    with contextlib.suppress(Exception):
-        from gateway.session_context import get_session_env
-        if (get_session_env("HERMES_SESSION_PLATFORM") or "").lower() == "max":
-            raw = (get_session_env("HERMES_SESSION_CHAT_ID") or "").strip()
-            if raw.lstrip("-").isdigit():
-                return int(raw)
     return None
 
 
@@ -106,17 +92,17 @@ async def _max_sticker_handler(args: Dict[str, Any], **kwargs) -> str:
                     "пользователя прислать стикер или укажите code.")
         code = seen[0]["code"]
 
-    chat_id = args.get("chat_id") or _session_chat_id()
+    chat_id = args.get("chat_id") or session_chat_id()
     if chat_id is None:
         return ("❌ Не удалось определить chat_id. Укажите его параметром chat_id "
                 "(числовой ID чата MAX), либо вызывайте из чата MAX.")
 
-    token = _secret("MAX_ACCESS_TOKEN", "")
+    token = secret("MAX_ACCESS_TOKEN", "")
     if not token:
         return "❌ MAX_ACCESS_TOKEN не настроен."
 
     from .max_api import MaxApiError, MaxClient
-    async with MaxClient(token, base_url=_secret("MAX_API_BASE", "") or None) as client:
+    async with MaxClient(token, base_url=secret("MAX_API_BASE", "") or None) as client:
         try:
             await client.send_message(
                 int(chat_id), "",

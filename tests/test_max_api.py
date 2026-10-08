@@ -173,6 +173,22 @@ async def test_upload_photos_map_token():
 
 
 @respx.mock
+async def test_upload_rejects_file_over_cap(monkeypatch, tmp_path):
+    """RAM-кап: файл больше лимита не читается в память и не уходит на хост."""
+    import maxbot.max_api as M
+
+    monkeypatch.setattr(M, "_MAX_UPLOAD_BYTES", 4, raising=False)
+    f = tmp_path / "big.bin"
+    f.write_bytes(b"12345")  # 5 Б > капа 4
+    up = respx.post("https://iu.oneme.ru/u").mock(
+        return_value=httpx.Response(200, json={"token": "T"}))
+    async with client() as c:
+        with pytest.raises(MaxApiError) as ei:
+            await c.upload_to_url("https://iu.oneme.ru/u", str(f))
+    assert ei.value.code == "too_large" and not up.calls
+
+
+@respx.mock
 async def test_upload_multipart_part_has_content_type():
     """API-хосты требуют curl-подобный multipart: per-part Content-Type обязателен."""
     route = respx.post("https://fu.oneme.ru/u").mock(

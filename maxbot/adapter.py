@@ -68,6 +68,8 @@ _DRAFT_MIN_INTERVAL = 1.0  # запас к лимиту MAX «2 правки/с�
 
 _MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024  # RAM-кап на скачивание вложений (MAX допускает файлы до 4 ГБ)
 
+_MID_SESSIONS_CAP = 1000  # удаление сообщений редкое — карта mid→сессия не растёт вечно
+
 _GROUP_ISOLATION_PROMPT = (
     "Ты отвечаешь в ГРУППОВОМ чате MAX, а не в личном диалоге. "
     "Опирайся только на текущую беседу группы и прямые запросы участников; "
@@ -375,6 +377,13 @@ class MaxAdapter(BasePlatformAdapter):
                     self._fail("config_missing", "webhook-режим требует MAX_WEBHOOK_URL", retryable=False)
                     await self.disconnect()
                     return False
+                # без секрета порт публичен и неаутентифицирован — fail closed
+                secret = _env_or_extra(self._extra, "MAX_WEBHOOK_SECRET", "webhook_secret")
+                if not secret:
+                    self._fail("config_missing",
+                               "webhook-режим требует MAX_WEBHOOK_SECRET (публичный порт без него открыт)", retryable=False)
+                    await self.disconnect()
+                    return False
                 from .transports import WebhookTransport
                 try:
                     from .webapp_api import build_routes
@@ -385,7 +394,7 @@ class MaxAdapter(BasePlatformAdapter):
                 self._transport = self._transport or WebhookTransport(
                     self._client, url=url,
                     port=int(_env_or_extra(self._extra, "MAX_WEBHOOK_PORT", "webhook_port", 8443)),
-                    secret=_env_or_extra(self._extra, "MAX_WEBHOOK_SECRET", "webhook_secret") or None,
+                    secret=secret,
                     **extra)
             else:
                 self._transport = self._transport or self._make_transport()
@@ -832,9 +841,15 @@ class MaxAdapter(BasePlatformAdapter):
                 remember_chat(_plugin_home(), str(chat_id), chat_type, title=str(title))
 
     def _purge_chat_state(self, chat_id: str) -> None:
-        """bot_removed/dialog_removed: чистим кэши чата."""
+        """bot_removed/dialog_removed: чистим все карты этого чата."""
         from . import state
         self._chat_users.pop(chat_id, None)
+        self._svc_state.pop(chat_id, None)
+        self._greeting_mids.pop(chat_id, None)
+        for key in [k for k in self._drafts if k[0] == chat_id]:
+            self._drafts.pop(key, None)
+        for mid in [m for m, v in self._mid_sessions.items() if v[1] == chat_id]:
+            self._mid_sessions.pop(mid, None)
         state.BOT_RIGHTS.pop(str(chat_id), None)  # права неактуальны — бота в чате нет
         if self._interactive:
             self._interactive.picker_state.pop(chat_id, None)
@@ -913,7 +928,7 @@ class MaxAdapter(BasePlatformAdapter):
                 await self._on_comment(update)
             elif update.update_type == "bot_admin_permissions_changed":
                 # Webhook-only событие (схема BotAdminPermissionsChangedUpdate).
-                # Молчаливое: обновляем общий стейт, им пользуется гейт pin_tool.
+                # Молчаливое: обновляем общий стейт, им пользуется гейт group_tool.
                 from . import state
                 chat_id = update.chat_id
                 if chat_id:
@@ -988,9 +1003,9 @@ class MaxAdapter(BasePlatformAdapter):
             try:
                 authorized = bool(check(source))
             except Exception:
-                logger.debug("max: /assistant — проверка доступа упала, пропускаем",
-                             exc_info=True)
-                authorized = True
+                logger.warning("max: /assistant — проверка доступа упала, отказ (fail closed)",
+                               exc_info=True)
+                authorized = False  # auth не бывает «упало → пустили»
             if not authorized:
                 with contextlib.suppress(Exception):
                     await self._client.send_message(int(chat_id), "⛔ Нет доступа.")
@@ -1102,6 +1117,8 @@ class MaxAdapter(BasePlatformAdapter):
             with contextlib.suppress(Exception):
                 self._mid_sessions[str(msg.body.mid)] = (
                     self._event_session_key(event), str(msg.chat_id), source)
+                if len(self._mid_sessions) > _MID_SESSIONS_CAP:
+                    del self._mid_sessions[next(iter(self._mid_sessions))]  # старейший
         await self.handle_message(event)
 
     async def _group_gate(self, msg, text: str):

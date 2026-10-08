@@ -4,12 +4,13 @@
 кик, выход из чата, переименование. chat_id по умолчанию — чат текущей
 MAX-сессии (HERMES_SESSION_CHAT_ID/PLATFORM).
 """
-import contextlib
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from gateway.platforms._shared import get_scoped_secret
+
+from .state import session_chat_id
 
 logger = logging.getLogger(__name__)
 
@@ -82,21 +83,11 @@ _RIGHTS_BY_ACTION = {
 }
 
 
-def _session_chat_id() -> Optional[int]:
-    with contextlib.suppress(Exception):
-        from gateway.session_context import get_session_env
-        if (get_session_env("HERMES_SESSION_PLATFORM") or "").lower() == "max":
-            raw = (get_session_env("HERMES_SESSION_CHAT_ID") or "").strip()
-            if raw.lstrip("-").isdigit():
-                return int(raw)
-    return None
-
-
 async def _max_group_handler(args: Dict[str, Any], **kwargs) -> str:
     from .max_api import MaxApiError, MaxClient
 
     action = str(args.get("action") or "").strip()
-    chat_id = args.get("chat_id") or _session_chat_id()
+    chat_id = args.get("chat_id") or session_chat_id()
     if chat_id is None:
         return ("❌ Не удалось определить chat_id. Укажите его параметром chat_id "
                 "(числовой ID чата MAX), либо вызывайте из чата MAX.")
@@ -225,9 +216,35 @@ async def _max_channel_handler(args: Dict[str, Any], **kwargs) -> str:
             return f"❌ Ошибка MAX API: {exc}"
 
 
+_PIN_SCHEMA = {
+    "description": "Закрепление сообщений в чатах MAX: pin (нужен message_id, бот-админ), "
+                   "unpin, pinned. Тот же хендлер, что у max_group — короткое имя для агента.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["pin", "unpin", "pinned"],
+                       "description": "pin — закрепить сообщение (message_id); "
+                                      "unpin — открепить; pinned — показать закреплённое"},
+            "message_id": {"type": "string", "description": "mid сообщения MAX для pin"},
+            "chat_id": {"type": "integer",
+                        "description": "ID чата MAX; по умолчанию — текущий чат сессии"},
+        },
+        "required": ["action"],
+    },
+}
+
+
 def register_group_tool(ctx) -> None:
     from .adapter import check_requirements
 
+    ctx.register_tool(
+        name="max_pin",
+        toolset="hermes-max",
+        schema=_PIN_SCHEMA,
+        handler=_max_group_handler,
+        check_fn=check_requirements,
+        is_async=True,
+        description=_PIN_SCHEMA["description"])
     ctx.register_tool(
         name="max_channel",
         toolset="hermes-max",

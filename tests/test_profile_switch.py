@@ -500,6 +500,46 @@ async def test_assistant_denied_for_unauthorized_user(tmp_path, monkeypatch):
     assert not inter.calls and fc.sent and "доступ" in fc.sent[0].lower()
 
 
+async def test_assistant_fail_closed_when_check_raises(tmp_path, monkeypatch):
+    """Проверка доступа упала → отказ, а не пропуск (fail closed)."""
+    from maxbot.adapter import MaxAdapter
+
+    class _Cfg:
+        extra = {}
+
+    class _RunnerBoom(_RunnerAuth):
+        def _is_user_authorized_for_source(self, source):
+            raise RuntimeError("core boom")
+
+    class _Interactive:
+        def __init__(self):
+            self.calls = []
+
+        async def send_choice_picker(self, *a, **kw):
+            self.calls.append(a)
+
+    class _FC:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, **kw):
+            self.sent.append(text)
+            return "m.1"
+
+    inter = _Interactive()
+    fc = _FC()
+    adapter = MaxAdapter(_Cfg(), client=fc, transport=None)
+    adapter._bot_user_id = 999
+    adapter._interactive = inter
+    adapter._uploader = None
+    adapter.gateway_runner = _RunnerBoom()
+    monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default", "work"})
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
+    await adapter._handle_update(_upd_text("/assistant work"))
+    assert not inter.calls and fc.sent and "доступ" in fc.sent[0].lower()
+    assert profile_switch.load_map(tmp_path) == {}  # профиль не переключён
+
+
 async def test_assistant_allowed_for_authorized_user(tmp_path, monkeypatch):
     from maxbot.adapter import MaxAdapter
 
@@ -536,6 +576,18 @@ class _MediaFC:
     async def send_message(self, chat_id, text, **kw):
         self.sent.append((chat_id, kw.get("attachments")))
         return "m.1"
+
+
+def test_remember_chat_skips_noop_write(tmp_path):
+    """Повторная регистрация без изменений не перезаписывает файл:
+    remember_chat зовётся на каждом входящем сообщении."""
+    profile_switch.remember_chat(tmp_path, "100", "dm", title="Иван")
+    f = profile_switch._known_store(tmp_path)
+    ino = f.stat().st_ino
+    profile_switch.remember_chat(tmp_path, "100", "dm")  # title=None → прежний
+    assert f.stat().st_ino == ino            # файл не трогали
+    profile_switch.remember_chat(tmp_path, "100", "dm", title="Другое")
+    assert f.stat().st_ino != ino            # изменение — новая запись (tmp+replace)
 
 
 def test_known_chats_roundtrip(tmp_path):

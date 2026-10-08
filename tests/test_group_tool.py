@@ -28,10 +28,14 @@ def test_register_wires_tool():
     ctx = FakeCtx()
     register_group_tool(ctx)
     names = {t["name"]: t for t in ctx.tools}
-    assert set(names) == {"max_group", "max_channel"}
+    assert set(names) == {"max_group", "max_channel", "max_pin"}
     for tool in ctx.tools:
         assert tool["is_async"] is True
         assert callable(tool["handler"]) and callable(tool["check_fn"])
+    # max_pin — короткий алиас того же хендлера (не отдельная копия логики)
+    assert names["max_pin"]["handler"] is _max_group_handler
+    assert names["max_pin"]["schema"]["parameters"]["properties"]["action"]["enum"] == [
+        "pin", "unpin", "pinned"]
 
 
 async def test_handler_requires_chat():
@@ -108,7 +112,7 @@ def _gate(monkeypatch, client):
     import maxbot.max_api as api
 
     monkeypatch.setattr(G, "get_scoped_secret", lambda name, default="": "TOKEN")
-    monkeypatch.setattr(G, "_session_chat_id", lambda: 555)
+    monkeypatch.setattr(G, "session_chat_id", lambda: 555)
     monkeypatch.setattr(api, "MaxClient", lambda *a, **kw: client)
 
 

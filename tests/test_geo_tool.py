@@ -30,11 +30,11 @@ async def test_geo_sends_location_attachment(monkeypatch):
             sent["args"] = (chat_id, text, attachments)
             return "mid.1"
 
-    monkeypatch.setattr(geo_tool, "_MaxClient", lambda *a, **kw: C())
-    monkeypatch.setattr(geo_tool, "_secret", lambda name, default="": "TOKEN" if "TOKEN" in name else default)
+    monkeypatch.setattr("maxbot.max_api.MaxClient", lambda *a, **kw: C())
+    monkeypatch.setattr(geo_tool, "secret", lambda name, default="": "TOKEN" if "TOKEN" in name else default)
     monkeypatch.setenv("MAX_SESSION_CHAT_ID", "777")
     import maxbot.geo_tool as G
-    monkeypatch.setattr(G, "_session_chat_id", lambda: 777)
+    monkeypatch.setattr(G, "session_chat_id", lambda: 777)
 
     res = await _max_geo_handler({"latitude": 55.7558, "longitude": 37.6173})
     assert "✅" in res

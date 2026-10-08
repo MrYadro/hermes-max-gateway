@@ -69,9 +69,10 @@ MAX_ALLOWED_USERS=123,456   # кто может писать боту
 MAX_HOME_CHANNEL=-100...    # куда приходить cron-доставке
 ```
 
-Продвинутое (опционально): режим webhook вместо polling, порт и секрет вебхука,
-скрытие превью ссылок — переменные `MAX_UPDATES_MODE`, `MAX_WEBHOOK_URL`,
-`MAX_WEBHOOK_PORT`, `MAX_WEBHOOK_SECRET`, `MAX_DISABLE_LINK_PREVIEW`.
+Продвинутое (опционально): режим webhook вместо polling, порт и ссылка вебхука —
+переменные `MAX_UPDATES_MODE`, `MAX_WEBHOOK_URL`, `MAX_WEBHOOK_PORT`,
+`MAX_DISABLE_LINK_PREVIEW`. В webhook-режиме обязателен `MAX_WEBHOOK_SECRET`
+(без него публичный порт открыт — гейтвей не стартует).
 
 Приватность: память у каждого чата своя. По умолчанию агент может читать прошлые
 сессии вашего профиля по просьбе из любого чата — если это не нужно, скажите
@@ -252,6 +253,7 @@ UI управления профилями чатов прямо из MAX: вы�
 ```
 MAX_UPDATES_MODE=webhook
 MAX_WEBHOOK_URL=https://<домен>
+MAX_WEBHOOK_SECRET=<случайная строка>   # обязателен: без него connect() откажется
 MAX_ASSISTANT_ADMINS=123,456   # кому доступно управление; пусто → наследует MAX_ALLOWED_USERS
 ```
 

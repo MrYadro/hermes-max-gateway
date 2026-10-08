@@ -21,6 +21,13 @@ def _add_hermes_to_path() -> None:
 _add_hermes_to_path()
 
 
+@pytest.fixture(autouse=True)
+def _isolated_plugin_home(tmp_path, monkeypatch):
+    """Тесты, гоняющие входящие сообщения, пишут карту известных чатов —
+    уводим её из реального ~/.hermes (PII-гигиена и детерминизм)."""
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _max_platform_member():
     """Platform("max") разрешается только для зарегистрированных платформ.

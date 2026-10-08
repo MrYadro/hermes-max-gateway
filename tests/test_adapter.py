@@ -132,6 +132,28 @@ async def test_connect_webhook_without_url_releases_lock(monkeypatch):
     await adapter.disconnect()                       # безопасен после неудачи
 
 
+async def test_connect_webhook_without_secret_fails_closed(monkeypatch):
+    """Публичный порт без MAX_WEBHOOK_SECRET — открытый endpoint: отказ на старте."""
+    monkeypatch.setenv("MAX_UPDATES_MODE", "webhook")
+    monkeypatch.setenv("MAX_WEBHOOK_URL", "https://pub.example/hook")
+    monkeypatch.delenv("MAX_WEBHOOK_SECRET", raising=False)
+    adapter = make_adapter(FakeClient(), FakeTransport())
+    assert await adapter.connect() is False          # config_missing
+    assert adapter._lock_identity is None
+    await adapter.disconnect()
+
+
+async def test_connect_webhook_with_secret_starts(monkeypatch):
+    monkeypatch.setenv("MAX_UPDATES_MODE", "webhook")
+    monkeypatch.setenv("MAX_WEBHOOK_URL", "https://pub.example/hook")
+    monkeypatch.setenv("MAX_WEBHOOK_SECRET", "S1")
+    client, transport = FakeClient(), FakeTransport()
+    adapter = make_adapter(client, transport)
+    assert await adapter.connect() is True
+    assert transport.started
+    await adapter.disconnect()
+
+
 async def test_send_attachment_error_returns_failure(monkeypatch, tmp_path):
     from maxbot.max_api import MaxApiError
 

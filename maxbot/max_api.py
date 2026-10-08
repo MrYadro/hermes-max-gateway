@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_BASE = "https://platform-api2.max.ru"
 
+_MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # RAM-кап: multipart собирается в памяти (MAX допускает до 4 ГБ)
+
 
 class MaxApiError(Exception):
     """Ошибка MAX API. status=0 — сетевая. code — машинный код (напр. attachment.not.ready)."""
@@ -298,6 +300,9 @@ class MaxClient:
         image/file — в ответе загрузки (топ-уровень или карта photos).
         """
         import os
+        if os.path.getsize(path) > _MAX_UPLOAD_BYTES:
+            raise MaxApiError(413, f"файл больше капа {_MAX_UPLOAD_BYTES} Б — не грузим в память",
+                              code="too_large")
         with open(path, "rb") as fh:
             resp = await self._client.post(
                 upload_url,

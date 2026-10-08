@@ -1,5 +1,7 @@
 """Транспорты получения апдейтов MAX: long polling и webhook."""
 import asyncio
+import contextlib
+import hmac
 import logging
 from typing import Awaitable, Callable, List, Optional, Protocol
 
@@ -139,7 +141,7 @@ class WebhookTransport:
         logger.info("max webhook: слушаем :%d%s, подписка %s", self._port, self._path, self._url)
 
     async def stop(self) -> None:
-        with contextlib_suppress():
+        with contextlib.suppress(Exception):
             # схема: DELETE /subscriptions требует query url
             await self._client.unsubscribe(self._url)
         if self._runner:
@@ -150,7 +152,7 @@ class WebhookTransport:
         if self._secret:
             supplied = next((request.headers[h] for h in self._SECRET_HEADERS
                              if h in request.headers), None)
-            if supplied != self._secret:
+            if supplied is None or not hmac.compare_digest(supplied, self._secret):
                 logger.warning("max webhook: отклонён (секрет), update=%.200s",
                                (await request.text())[:200])
                 return aiohttp_web_response(status=401, text="bad secret")
@@ -178,11 +180,3 @@ class WebhookTransport:
 def aiohttp_web_response(status: int, text: str):
     from aiohttp import web
     return web.Response(status=status, text=text)
-
-
-class contextlib_suppress:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return True

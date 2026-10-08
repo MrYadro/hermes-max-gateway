@@ -263,6 +263,139 @@ async def test_slash_confirm_flashes_slow_op(monkeypatch):
     assert api.edited["mid.1"][0].startswith("✅")
 
 
+# ── клики по кнопкам проходят тот же allowlist, что и текстовые сообщения ──
+
+class AuthzApi(FakeAdapterApi):
+    """FakeAdapterApi + проверка allowlist из раннера (как у ядра) + build_source."""
+
+    def __init__(self, verdict):
+        super().__init__()
+        self.sources = []
+        self._verdict = verdict
+        outer = self
+
+        def check(source):
+            outer.sources.append(source)
+            if isinstance(outer._verdict, Exception):
+                raise outer._verdict
+            return outer._verdict
+
+        import types
+
+        self.gateway_runner = types.SimpleNamespace(_is_user_authorized_for_source=check)
+
+    def build_source(self, **kw):
+        return kw
+
+
+def _approval_prompt():
+    import types
+
+    return types.SimpleNamespace(
+        chat_id="100", session_key="sess:1", text="⚠️ cmd",
+        actions=[("Разрешить", "once", "primary"), ("Отклонить", "deny", "danger")])
+
+
+async def test_callback_denied_when_user_not_allowed(monkeypatch):
+    from maxbot import interactive as I
+
+    resolved = []
+    monkeypatch.setattr(I, "_resolve_approval",
+                        lambda sk, ch: resolved.append((sk, ch)) or 1)
+    api = AuthzApi(False)
+    disp = InteractiveDispatcher(api)
+    await disp.send_exec_approval_prompt(_approval_prompt())
+    await disp.dispatch(_cb("ea:100:once:1"))
+    assert resolved == []                       # команда не выполнена
+    assert api.answered[-1] == ("cb.9", "⛔ Нет доступа.")
+    assert not api.edited                       # клавиатуру не трогаем
+    assert disp.approval_state                  # подтверждение ждёт авторизованного
+
+
+async def test_callback_allowed_when_user_allowed(monkeypatch):
+    from maxbot import interactive as I
+
+    resolved = []
+    monkeypatch.setattr(I, "_resolve_approval",
+                        lambda sk, ch: resolved.append((sk, ch)) or 1)
+    api = AuthzApi(True)
+    disp = InteractiveDispatcher(api)
+    await disp.send_exec_approval_prompt(_approval_prompt())
+    await disp.dispatch(_cb("ea:100:once:1"))
+    assert resolved == [("sess:1", "once")]
+    src = api.sources[0]
+    assert src["user_id"] == "1" and src["chat_id"] == "100"
+
+
+async def test_callback_fail_closed_when_check_raises(monkeypatch):
+    from maxbot import interactive as I
+
+    resolved = []
+    monkeypatch.setattr(I, "_resolve_approval",
+                        lambda sk, ch: resolved.append((sk, ch)) or 1)
+    api = AuthzApi(RuntimeError("core boom"))
+    disp = InteractiveDispatcher(api)
+    await disp.send_exec_approval_prompt(_approval_prompt())
+    await disp.dispatch(_cb("ea:100:deny:1"))
+    assert resolved == []
+    assert api.answered[-1] == ("cb.9", "⛔ Нет доступа.")
+
+
+async def test_denied_gc_click_gets_no_toast(monkeypatch):
+    """Отказанный gc:-клик без тоста: /answers перезаписал бы текст приветствия."""
+    api = AuthzApi(False)
+    disp = InteractiveDispatcher(api)
+    ran = []
+
+    async def fake_cmd(cb):
+        ran.append(cb.payload)
+
+    monkeypatch.setattr(disp.api, "on_greeting_cmd", fake_cmd, raising=False)
+    await disp.dispatch(_cb("gc:100:new"))
+    assert ran == []                    # команда не выполнена
+    assert not api.answered             # и без тоста-перезаписи
+    assert not api.edited
+
+
+async def test_denied_click_without_chat_id_is_silent_deny(monkeypatch):
+    """Мусорный payload без chat_id — отказ; для не-gc кнопок тост уходит."""
+    from maxbot import interactive as I
+
+    resolved = []
+    monkeypatch.setattr(I, "_resolve_approval",
+                        lambda sk, ch: resolved.append((sk, ch)) or 1)
+    api = AuthzApi(True)  # даже разрешающий allowlist не спасёт без chat_id
+    disp = InteractiveDispatcher(api)
+    await disp.send_exec_approval_prompt(_approval_prompt())
+    await disp.dispatch(_cb("ea:нецифра:once:1"))
+    assert resolved == []
+    assert api.answered[-1] == ("cb.9", "⛔ Нет доступа.")
+
+
+async def test_callback_chat_type_taken_from_known_chats(tmp_path, monkeypatch):
+    """Тип чата клика — из карты известных чатов, не догадка по цифрам:
+    групповые chat_id MAX тоже числовые, а групповой allowlist ядра смотрит на тип."""
+    from maxbot import profile_switch as PS
+
+    PS.remember_chat(tmp_path, "100", "group")
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
+    api = AuthzApi(True)
+    disp = InteractiveDispatcher(api)
+    await disp.send_exec_approval_prompt(_approval_prompt())
+    await disp.dispatch(_cb("ea:100:once:1"))
+    assert api.sources[0]["chat_type"] == "group"
+
+
+async def test_callback_chat_type_falls_back_to_heuristic(tmp_path, monkeypatch):
+    """Чата нет в карте (свежий инстанс) — прежняя эвристика по цифрам."""
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)  # карта пуста
+    api = AuthzApi(True)
+    disp = InteractiveDispatcher(api)
+    await disp.send_exec_approval_prompt(_approval_prompt())
+    await disp.dispatch(_cb("ea:100:once:1"))
+    assert api.sources[0]["chat_type"] == "dm"
+
+
 class TestKeyboardAttachmentTypes:
     """Полная матрица кнопок MAX: callback(+intent), link, clipboard, message."""
 
@@ -310,56 +443,3 @@ async def test_approval_buttons_have_intents():
     deny = next(b for t, b in by_text.items() if "Отклонить" in t)
     assert approve["intent"] == "positive"
     assert deny["intent"] == "negative"
-
-
-class TestPinTool:
-    async def test_pin_requires_message_id(self, monkeypatch):
-        from maxbot.pin_tool import _max_pin_handler
-        r = await _max_pin_handler({"action": "pin", "chat_id": 100})
-        assert "message_id" in r
-
-    async def test_pin_calls_client(self, monkeypatch):
-        import maxbot.pin_tool as P
-
-        calls = []
-
-        class _FakeClient:
-            def __init__(self):
-                self.membership_calls = 0
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *a):
-                return False
-
-            async def get_membership(self, chat_id):
-                self.membership_calls += 1
-                return {"is_admin": True, "permissions": ["pin_message"]}
-
-            async def pin_message(self, chat_id, mid):
-                calls.append(("pin", chat_id, mid))
-                return True
-
-        async def _factory(*a, **kw):
-            return _FakeClient()
-
-        import maxbot.max_api as MA
-
-        class _FakeMaxClient:
-            def __init__(self, *a, **kw):
-                pass
-
-            async def __aenter__(self):
-                return _FakeClient()
-
-            async def __aexit__(self, *a):
-                return False
-
-        monkeypatch.setattr(MA, "MaxClient", _FakeMaxClient)
-        monkeypatch.setattr(P, "_secret", lambda n, d="": "T" if "TOKEN" in n else d)
-        from maxbot import state
-        state.BOT_RIGHTS.clear()  # гейт идёт в membership только при пустом кэше
-        r = await P._max_pin_handler({"action": "pin", "chat_id": 100,
-                                      "message_id": "mid.1"})
-        assert "Закреплено" in r

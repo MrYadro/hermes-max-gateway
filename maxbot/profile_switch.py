@@ -136,6 +136,8 @@ def remember_chat(home: Path, chat_key: str, chat_type: str,
         title = str(title).strip()
     if title or (chat_key in data and data[chat_key].get("title") and title is None):
         entry["title"] = title if title is not None else data[chat_key]["title"]
+    if data.get(str(chat_key)) == entry:
+        return  # ничего не изменилось — не пишем (зовётся на каждом сообщении)
     data[str(chat_key)] = entry
     tmp = f.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")

@@ -11,17 +11,17 @@ from .markdown import sanitize_markdown
 logger = logging.getLogger(__name__)
 
 _YAML_KEYS = {
-    "access_token": ("MAX_ACCESS_TOKEN", str),
-    "allowed_users": ("MAX_ALLOWED_USERS", str),
-    "allow_all_users": ("MAX_ALLOW_ALL_USERS", str),
-    "home_channel": ("MAX_HOME_CHANNEL", str),
-    "updates_mode": ("MAX_UPDATES_MODE", str),
-    "webhook_url": ("MAX_WEBHOOK_URL", str),
-    "webhook_port": ("MAX_WEBHOOK_PORT", int),
-    "webhook_secret": ("MAX_WEBHOOK_SECRET", str),
-    "api_base": ("MAX_API_BASE", str),
-    "disable_link_preview": ("MAX_DISABLE_LINK_PREVIEW", str),
-    "group_isolation": ("MAX_GROUP_ISOLATION", str),
+    "access_token": "MAX_ACCESS_TOKEN",
+    "allowed_users": "MAX_ALLOWED_USERS",
+    "allow_all_users": "MAX_ALLOW_ALL_USERS",
+    "home_channel": "MAX_HOME_CHANNEL",
+    "updates_mode": "MAX_UPDATES_MODE",
+    "webhook_url": "MAX_WEBHOOK_URL",
+    "webhook_port": "MAX_WEBHOOK_PORT",
+    "webhook_secret": "MAX_WEBHOOK_SECRET",
+    "api_base": "MAX_API_BASE",
+    "disable_link_preview": "MAX_DISABLE_LINK_PREVIEW",
+    "group_isolation": "MAX_GROUP_ISOLATION",
 }
 
 
@@ -45,7 +45,7 @@ def _apply_yaml_config(yaml_cfg: Dict[str, Any], platform_cfg=None) -> Optional[
     if not isinstance(yaml_cfg, dict) or not yaml_cfg:
         return None
     extra: Dict[str, Any] = {}
-    for key, (env, _conv) in _YAML_KEYS.items():
+    for key, env in _YAML_KEYS.items():
         value = yaml_cfg.get(key)
         if value in (None, "", [], {}):
             continue
