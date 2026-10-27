@@ -267,6 +267,85 @@ async def test_comment_stamps_channel_wide_profile(tmp_path, monkeypatch):
     assert ev.source.profile == "work"
 
 
+def _upd_comment(text, channel=500, post_id="mid.777"):
+    from maxbot.models import parse_update
+    return parse_update({
+        "update_type": "comment_created", "marker": 9,
+        "message": {"body": {"mid": "cm.1", "text": text, "attachments": []},
+                    "recipient": {"chat_id": channel, "post_id": post_id},
+                    "sender": {"user_id": 13, "name": "Петя"}, "timestamp": 1},
+    })
+
+
+async def test_assistant_in_comment_thread_switches(tmp_path, monkeypatch):
+    """/assistant <имя> в ветке комментариев: профиль канал-wide, ответ —
+    комментарием в ту же ветку (в сам канал бот не пишет)."""
+    from maxbot.adapter import MaxAdapter
+
+    class _Cfg:
+        extra = {}
+
+    fc = _MediaFC()
+    adapter = MaxAdapter(_Cfg(), client=fc, transport=None)
+    adapter._bot_user_id = 999
+    adapter._interactive = None
+    adapter._uploader = None
+    runner = _RunnerAuth()
+    adapter.gateway_runner = runner
+    monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default", "work"})
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
+    await adapter._handle_update(_upd_comment("/assistant work"))
+    assert profile_switch.load_map(tmp_path) == {"500": "work"}
+    assert fc.commented and fc.commented[0][0] == "mid.777"
+    assert "work" in fc.commented[0][1]
+    assert not fc.sent
+    assert runner.checked and runner.checked[0].chat_type == "channel"
+
+
+async def test_assistant_in_comment_thread_lists_as_text(tmp_path, monkeypatch):
+    """Клавиатуры в комментариях нет: голый /assistant в ветке отвечает
+    текстовым списком профилей, карту не трогает."""
+    from maxbot.adapter import MaxAdapter
+
+    class _Cfg:
+        extra = {}
+
+    fc = _MediaFC()
+    adapter = MaxAdapter(_Cfg(), client=fc, transport=None)
+    adapter._bot_user_id = 999
+    adapter._interactive = None
+    adapter._uploader = None
+    adapter.gateway_runner = _Runner()
+    monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default", "work"})
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
+    await adapter._handle_update(_upd_comment("/assistant"))
+    assert profile_switch.load_map(tmp_path) == {}
+    assert len(fc.commented) == 1
+    assert "default" in fc.commented[0][1] and "work" in fc.commented[0][1]
+    assert not fc.sent
+
+
+async def test_assistant_in_comment_thread_unknown_lists(tmp_path, monkeypatch):
+    """/assistant ghost в ветке — доступные профили списком, карта не меняется."""
+    from maxbot.adapter import MaxAdapter
+
+    class _Cfg:
+        extra = {}
+
+    fc = _MediaFC()
+    adapter = MaxAdapter(_Cfg(), client=fc, transport=None)
+    adapter._bot_user_id = 999
+    adapter._interactive = None
+    adapter._uploader = None
+    adapter.gateway_runner = _Runner()
+    monkeypatch.setattr(profile_switch, "_existing_profiles", lambda: {"default", "work"})
+    monkeypatch.setattr("maxbot.adapter._plugin_home", lambda: tmp_path)
+    await adapter._handle_update(_upd_comment("/assistant ghost"))
+    assert profile_switch.load_map(tmp_path) == {}
+    assert fc.commented and "work" in fc.commented[0][1]
+    assert not fc.sent
+
+
 class _RunnerAuth:
     class config:
         multiplex_profiles = True

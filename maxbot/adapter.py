@@ -823,6 +823,14 @@ class MaxAdapter(BasePlatformAdapter):
         text = msg.body.text or ""
         if not text.strip():
             return
+        # /assistant работает и в ветках комментариев (README: «в любом чате»);
+        # остальные команды — только в обычных чатах (_on_message)
+        parts = text.strip().split(maxsplit=1)
+        if parts and parts[0].lstrip("/").lower() == "assistant":
+            await self._assistant_command(
+                str(channel_id), msg, parts[1].strip() if len(parts) > 1 else "",
+                chat_type="channel", thread_id=str(post_id))
+            return
         source = self.build_source(
             chat_id=str(channel_id), chat_name=f"канал:{channel_id}",
             chat_type="channel", thread_id=str(post_id), parent_chat_id=str(channel_id),
@@ -982,23 +990,32 @@ class MaxAdapter(BasePlatformAdapter):
             source.profile = name
         return source
 
-    async def _assistant_command(self, chat_id: str, msg=None, arg: str = "") -> None:
+    async def _assistant_command(self, chat_id: str, msg=None, arg: str = "",
+                                 chat_type: str = "", thread_id: str = "") -> None:
         """Переключение профиля чата: пикер или `/assistant <имя>` → карта чат→профиль
-        → штамп source.profile. Авторизация — тем же механизмом ядра."""
+        → штамп source.profile. Авторизация — тем же механизмом ядра.
+        В ветке комментариев (thread_id) ответ уходит post_comment: комментарии —
+        только текст, пикер заменён текстовым списком профилей."""
         from . import profile_switch
-        if not self._multiplex_on():
+        if not chat_type:
+            chat_type = "dm" if getattr(msg, "chat_type", "") == "dialog" else "group"
+
+        async def _say(text: str) -> None:
             with contextlib.suppress(Exception):
-                await self._client.send_message(
-                    int(chat_id),
-                    "⚙️ Переключение профилей требует gateway.multiplex_profiles: true "
-                    "в config.yaml и рестарт гейтвея.")
+                if thread_id:
+                    await self._client.post_comment(thread_id, text)
+                else:
+                    await self._client.send_message(int(chat_id), text)
+
+        if not self._multiplex_on():
+            await _say("⚙️ Переключение профилей требует gateway.multiplex_profiles: true "
+                       "в config.yaml и рестарт гейтвея.")
             return
         check = getattr(getattr(self, "gateway_runner", None),
                         "_is_user_authorized_for_source", None)
         if callable(check) and msg is not None:
             source = self.build_source(
-                chat_id=str(chat_id),
-                chat_type="dm" if getattr(msg, "chat_type", "") == "dialog" else "group",
+                chat_id=str(chat_id), chat_type=chat_type,
                 user_id=str(msg.sender.user_id) if msg.sender else "")
             try:
                 authorized = bool(check(source))
@@ -1007,8 +1024,7 @@ class MaxAdapter(BasePlatformAdapter):
                                exc_info=True)
                 authorized = False  # auth не бывает «упало → пустили»
             if not authorized:
-                with contextlib.suppress(Exception):
-                    await self._client.send_message(int(chat_id), "⛔ Нет доступа.")
+                await _say("⛔ Нет доступа.")
                 return
 
         def _confirm(name: str) -> str:
@@ -1018,7 +1034,8 @@ class MaxAdapter(BasePlatformAdapter):
         async def _send_app_link() -> None:
             # схема OpenAppButton: web_app = публичное имя бота (обязательное
             # поле), URL мини-аппа прописывается в настройках бота на business.max.ru
-            if self._bot_username:
+            # в комментариях клавиатура невозможна — только в обычных чатах
+            if self._bot_username and not thread_id:
                 with contextlib.suppress(Exception):
                     await self._client.send_message(
                         int(chat_id), "🖥 Профили и настройки:",
@@ -1029,18 +1046,20 @@ class MaxAdapter(BasePlatformAdapter):
         if arg:
             if profile_switch.profile_exists(arg):
                 profile_switch.set_profile(_plugin_home(), str(chat_id), arg)
-                with contextlib.suppress(Exception):
-                    await self._client.send_message(int(chat_id), _confirm(arg))
+                await _say(_confirm(arg))
                 await _send_app_link()
             else:
                 names = ", ".join(profile_switch.available_profiles())
-                with contextlib.suppress(Exception):
-                    await self._client.send_message(
-                        int(chat_id), f"🤷 Профиля «{arg}» нет. Доступны: {names}")
+                await _say(f"🤷 Профиля «{arg}» нет. Доступны: {names}")
+            return
+        current = profile_switch.load_map(_plugin_home()).get(str(chat_id), "default")
+        if thread_id:
+            names = ", ".join(profile_switch.available_profiles())
+            await _say(f"🧭 Текущий: {current}. Доступны: {names}. "
+                       f"Переключение — /assistant <имя>.")
             return
         if not self._interactive:
             return
-        current = profile_switch.load_map(_plugin_home()).get(str(chat_id), "default")
         choices = []
         for name in profile_switch.available_profiles():
             desc = profile_switch.profile_description(name)

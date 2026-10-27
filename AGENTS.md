@@ -32,7 +32,8 @@ AGENTS, не в репо.
   `max-channel-<id>` из ключа сессии; никаких реестров пост→канал.
 - Профили-ассистенты: карта `_chat_profiles.json` + штамп `source.profile`
   в `MaxAdapter.build_source` (требует `multiplex_profiles`). Команда `/assistant`
-  перехватывается в `_on_message` до group-gate.
+  перехватывается в `_on_message` до group-gate и в `_on_comment` (там ответы —
+  `post_comment`, пикер заменён текстовым списком: комментарии — только текст).
 - Мини-апп `/max/app/*` живёт на webhook-порту (extra_routes); авторизация
   initData-HMAC + MAX_ASSISTANT_ADMINS; dist коммитим, node_modules — нет.
 EOF
