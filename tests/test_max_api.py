@@ -214,6 +214,47 @@ async def test_upload_video_token_from_slot():
     assert token == "VID-TOK"
 
 
+@respx.mock
+async def test_answer_callback_uses_notification_toast():
+    """CallbackAnswer.notification — одноразовый тост; message перезаписал бы текст."""
+    route = respx.post(f"{BASE}/answers").mock(
+        return_value=httpx.Response(200, json={"success": True}))
+    async with client() as c:
+        ok = await c.answer_callback("cb.1", "Готово")
+    assert ok
+    assert json.loads(route.calls.last.request.content) == {"notification": "Готово"}
+    assert route.calls.last.request.url.params["callback_id"] == "cb.1"
+
+
+@respx.mock
+async def test_get_me_first_name_fallback():
+    """BotInfo наследует User (first_name/last_name), поля «name» в схеме нет."""
+    respx.get(f"{BASE}/me").mock(return_value=httpx.Response(
+        200, json={"user_id": 1, "first_name": "Hermes", "username": "hermes_bot"}))
+    async with client() as c:
+        me = await c.get_me()
+    assert me.name == "Hermes" and me.username == "hermes_bot"
+
+
+@respx.mock
+async def test_upload_retries_network_errors(monkeypatch, tmp_path):
+    """Файловый POST на upload-хост повторяем сами (клиент его не ретраит)."""
+    async def _nosleep(_):
+        return None
+
+    monkeypatch.setattr("maxbot.max_api.asyncio.sleep", _nosleep)
+    route = respx.post("https://up.host/x").mock(side_effect=[
+        httpx.ConnectError("net"),
+        httpx.ConnectError("net"),
+        httpx.Response(200, json={"token": "tok"}),
+    ])
+    f = tmp_path / "f.bin"
+    f.write_bytes(b"data")
+    async with client() as c:
+        token = await c.upload_to_url("https://up.host/x", str(f))
+    assert token == "tok" and route.call_count == 3
+
+
 def test_extract_message_id_variants():
     assert extract_message_id({"message": {"body": {"mid": "m1"}}}) == "m1"
     assert extract_message_id({"message_id": "m2"}) == "m2"

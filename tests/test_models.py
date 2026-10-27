@@ -1,4 +1,4 @@
-from maxbot.models import parse_update
+from maxbot.models import parse_message, parse_update
 
 
 def _message_created(text="привет", chat_type="dialog", sender_id=42, chat_id=100):
@@ -70,6 +70,21 @@ def test_parse_bot_admin_permissions_changed_revoked():
                       "chat_id": -200, "user_id": 7, "bot_id": 999,
                       "is_channel": False, "is_admin": False})
     assert u.is_admin is False and u.permissions == []
+
+
+def test_parse_user_first_last_name():
+    """Схема MAX: у User имени-«name» нет — собираем из first_name/last_name."""
+    msg = parse_message({"body": {"mid": "m.1", "text": "hi"},
+                         "recipient": {"chat_id": 5, "chat_type": "dialog"},
+                         "sender": {"user_id": 7, "first_name": "Иван", "last_name": "Петров"}})
+    assert msg.sender.name == "Иван Петров"
+
+
+def test_parse_user_first_name_only():
+    msg = parse_message({"body": {"mid": "m.1"},
+                         "recipient": {"chat_id": 5, "chat_type": "dialog"},
+                         "sender": {"user_id": 7, "first_name": "Иван"}})
+    assert msg.sender.name == "Иван"
 
 
 def test_parse_tolerant_to_unknown_fields():

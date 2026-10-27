@@ -1016,14 +1016,15 @@ class MaxAdapter(BasePlatformAdapter):
                     f"сессию с его SOUL.md, скиллами и моделью. Переключение — /assistant.")
 
         async def _send_app_link() -> None:
-            base = str(get_scoped_secret("MAX_WEBHOOK_URL", "") or "").rstrip("/")
-            if base:
+            # схема OpenAppButton: web_app = публичное имя бота (обязательное
+            # поле), URL мини-аппа прописывается в настройках бота на business.max.ru
+            if self._bot_username:
                 with contextlib.suppress(Exception):
                     await self._client.send_message(
                         int(chat_id), "🖥 Профили и настройки:",
                         attachments=[{"type": "inline_keyboard", "payload": {"buttons": [[
                             {"type": "open_app", "text": "🖥 Управлять профилями",
-                             "url": f"{base}/max/app/"}]]}}])
+                             "web_app": self._bot_username}]]}}])
 
         if arg:
             if profile_switch.profile_exists(arg):

@@ -85,7 +85,10 @@ class Update:
 def _user(d: Dict[str, Any]) -> Optional[User]:
     if not d:
         return None
-    return User(user_id=int(d.get("user_id") or 0), name=d.get("name") or "",
+    # схема MAX: у User имя — first_name/last_name ("name" в схеме нет)
+    name = d.get("name") or " ".join(
+        p for p in (d.get("first_name"), d.get("last_name")) if p)
+    return User(user_id=int(d.get("user_id") or 0), name=name.strip(),
                 username=d.get("username"))
 
 

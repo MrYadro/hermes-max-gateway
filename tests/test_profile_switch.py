@@ -341,7 +341,7 @@ async def test_assistant_text_form_unknown_lists_profiles(tmp_path, monkeypatch)
 
 
 async def test_assistant_sends_open_app_button(tmp_path, monkeypatch):
-    """При MAX_WEBHOOK_URL пикер /assistant дополняется кнопкой open_app мини-аппа."""
+    """С известным username бота пикер /assistant дополняется кнопкой open_app."""
     from maxbot.adapter import MaxAdapter
 
     class _Cfg:
@@ -358,12 +358,11 @@ async def test_assistant_sends_open_app_button(tmp_path, monkeypatch):
                 self.keyboards.append(kw["attachments"])
             return "m.1"
 
-    monkeypatch.setattr("maxbot.adapter.get_scoped_secret",
-                        lambda name, default="": "https://bot.example" if name == "MAX_WEBHOOK_URL" else default)
     inter = _InteractiveRec()
     fc = _FC()
     adapter = MaxAdapter(_Cfg(), client=fc, transport=None)
     adapter._bot_user_id = 999
+    adapter._bot_username = "hermes_bot"
     adapter._interactive = inter
     adapter._uploader = None
     adapter.gateway_runner = _RunnerAuth()
@@ -371,12 +370,13 @@ async def test_assistant_sends_open_app_button(tmp_path, monkeypatch):
     monkeypatch.setattr(profile_switch, "_soul_text", lambda name: "")
     await adapter._handle_update(_upd_text("/assistant"))
     assert inter.calls  # пикер отправлен
-    assert fc.keyboards and fc.keyboards[0][0]["payload"]["buttons"][0][0]["type"] == "open_app"
-    assert fc.keyboards[0][0]["payload"]["buttons"][0][0]["url"].endswith("/max/app/")
+    btn = fc.keyboards[0][0]["payload"]["buttons"][0][0]
+    assert fc.keyboards and btn["type"] == "open_app"
+    assert btn["web_app"] == "hermes_bot"
 
 
-async def test_assistant_no_open_app_button_without_url(tmp_path, monkeypatch):
-    """Без MAX_WEBHOOK_URL кнопка мини-аппа не отправляется."""
+async def test_assistant_no_open_app_button_without_username(tmp_path, monkeypatch):
+    """Без username бота (get_me не дал) кнопка мини-аппа не отправляется."""
     from maxbot.adapter import MaxAdapter
 
     class _Cfg:
@@ -393,11 +393,11 @@ async def test_assistant_no_open_app_button_without_url(tmp_path, monkeypatch):
                 self.keyboards.append(kw["attachments"])
             return "m.1"
 
-    monkeypatch.setattr("maxbot.adapter.get_scoped_secret", lambda name, default="": default)
     inter = _InteractiveRec()
     fc = _FC()
     adapter = MaxAdapter(_Cfg(), client=fc, transport=None)
     adapter._bot_user_id = 999
+    adapter._bot_username = ""
     adapter._interactive = inter
     adapter._uploader = None
     adapter.gateway_runner = _RunnerAuth()
@@ -425,12 +425,11 @@ async def test_assistant_direct_form_sends_open_app_button(tmp_path, monkeypatch
                 self.keyboards.append(kw["attachments"])
             return "m.1"
 
-    monkeypatch.setattr("maxbot.adapter.get_scoped_secret",
-                        lambda name, default="": "https://bot.example" if name == "MAX_WEBHOOK_URL" else default)
     inter = _InteractiveRec()
     fc = _FC()
     adapter = MaxAdapter(_Cfg(), client=fc, transport=None)
     adapter._bot_user_id = 999
+    adapter._bot_username = "hermes_bot"
     adapter._interactive = inter
     adapter._uploader = None
     adapter.gateway_runner = _RunnerAuth()
@@ -439,8 +438,9 @@ async def test_assistant_direct_form_sends_open_app_button(tmp_path, monkeypatch
     await adapter._handle_update(_upd_text("/assistant work"))
     assert not inter.calls
     assert profile_switch.load_map(tmp_path) == {"500": "work"}
-    assert fc.keyboards and fc.keyboards[0][0]["payload"]["buttons"][0][0]["type"] == "open_app"
-    assert fc.keyboards[0][0]["payload"]["buttons"][0][0]["url"].endswith("/max/app/")
+    btn = fc.keyboards[0][0]["payload"]["buttons"][0][0]
+    assert fc.keyboards and btn["type"] == "open_app"
+    assert btn["web_app"] == "hermes_bot"
 
 
 async def test_assistant_picker_shows_descriptions(tmp_path, monkeypatch):

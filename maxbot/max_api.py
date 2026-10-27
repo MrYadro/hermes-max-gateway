@@ -96,9 +96,9 @@ class MaxClient:
         return resp.json()
 
     async def get_me(self) -> User:
-        from .models import User
+        from .models import User, _user
         d = await self._request("GET", "/me")
-        return User(user_id=int(d.get("user_id") or 0), name=d.get("name") or "", username=d.get("username"))
+        return _user(d) or User(user_id=0)
 
     async def get_chat(self, chat_id: int) -> Dict[str, Any]:
         return await self._request("GET", f"/chats/{chat_id}")
@@ -170,13 +170,13 @@ class MaxClient:
         return bool(resp.get("success", True))
 
     async def answer_callback(self, callback_id: str, text: Optional[str] = None) -> bool:
-        # callback_id — query-параметр (в теле даёт 400 proto.payload)
+        # callback_id — query-параметр (в теле даёт 400 proto.payload);
+        # text → notification: одноразовый тост (схема CallbackAnswer;
+        # message вместо тоста перезаписывает текст исходного сообщения)
         params = {"callback_id": callback_id}
         if self.disable_link_preview:
             params["disable_link_preview"] = "true"
-        body: Dict[str, Any] = {}
-        if text:
-            body["message"] = {"text": text}
+        body: Dict[str, Any] = {"notification": text} if text else {}
         resp = await self._request("POST", "/answers", params=params, json_body=body or None)
         return bool(resp.get("success", True))
 
@@ -304,10 +304,22 @@ class MaxClient:
             raise MaxApiError(413, f"файл больше капа {_MAX_UPLOAD_BYTES} Б — не грузим в память",
                               code="too_large")
         with open(path, "rb") as fh:
-            resp = await self._client.post(
-                upload_url,
-                files={"data": (os.path.basename(path), fh.read(),
-                                "application/octet-stream")})
+            data = fh.read()
+        fname = os.path.basename(path)
+        resp = None
+        for attempt in range(3):  # файловый POST не ретраится — сетевые сбои повторяем сами
+            try:
+                resp = await self._client.post(
+                    upload_url,
+                    files={"data": (fname, data, "application/octet-stream")})
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                if attempt == 2:
+                    raise MaxApiError(0, str(exc), code="network") from exc
+                await asyncio.sleep(0.5 * (attempt + 1))
+                continue
+            if resp.status_code < 500 or attempt == 2:
+                break
+            await asyncio.sleep(0.5 * (attempt + 1))
         if resp.status_code >= 400:
             raise MaxApiError(resp.status_code, resp.text[:200], code="upload_failed")
         with contextlib.suppress(ValueError):

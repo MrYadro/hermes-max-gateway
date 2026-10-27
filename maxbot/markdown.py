@@ -21,6 +21,7 @@ def _outside_code(text: str, fn) -> str:
     return "".join(p if p.startswith("```") else fn(p) for p in parts)
 
 _LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
+_MENTION_RE = re.compile(r"\[([^\]]*)\]\(max://[^)\s]*\)")
 
 _MAX_URL = 2048
 
@@ -252,8 +253,9 @@ def _escape_marker(segment: str, ch: str) -> str:
 
 def comment_markdown(text: str) -> str:
     """Markdown для комментариев каналов: MAX не поддерживает ссылки/упоминания —
-    разворачиваем [текст](url) в «текст: url»."""
-    return _LINK_RE.sub(lambda m: f"{m.group(1)}: {m.group(2)}", sanitize_markdown(text))
+    разворачиваем [текст](url) в «текст: url», упоминания — в имя."""
+    text = _MENTION_RE.sub(lambda m: m.group(1), sanitize_markdown(text))
+    return _LINK_RE.sub(lambda m: f"{m.group(1)}: {m.group(2)}", text)
 
 
 # «/x-y» только с начала строки (или после маркера списка/цитаты — формат /help):

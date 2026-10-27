@@ -221,7 +221,7 @@ class InteractiveDispatcher:
                     cb.message.chat_id if cb.message else None,
                     cb.message.sender.user_id if cb.message and cb.message.sender else None)
         if not await self._click_allowed(cb):
-            # gc: без тоста: /answers перезаписал бы текст приветствия кнопкой-строкой
+            # gc: без тоста — ответ команды и так придёт сообщением
             if not payload.startswith("gc:"):
                 with contextlib.suppress(Exception):
                     await self.api.api_answer(cb.callback_id, "⛔ Нет доступа.")
@@ -240,8 +240,8 @@ class InteractiveDispatcher:
             elif payload.startswith("pg:"):
                 await self.api.on_page_nav(cb)
             elif payload.startswith("gc:"):
-                # MAX не умеет попап-тосты: /answers перезаписывает текст сообщения
-                # с кнопкой. Отклик кнопки — сам ответ команды, клавиатуру не трогаем.
+                # тост не нужен: отклик кнопки — сам ответ команды,
+                # клавиатуру не трогаем
                 await self.api.on_greeting_cmd(cb)
         except Exception:
             logger.exception("max: callback %r не обработан", payload)

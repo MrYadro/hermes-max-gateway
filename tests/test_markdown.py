@@ -209,6 +209,12 @@ class TestDashedCommandAlias:
         text = "см. https://host/reload-mcp и max://user/9"
         assert sanitize_markdown(text) == text
 
+    def test_comment_markdown_expands_mention(self):
+        """В комментариях упоминания не рендерятся — разворачиваем в имя."""
+        from maxbot.markdown import comment_markdown
+        assert comment_markdown("Привет, [Иван Петров](max://user/9)!") == \
+            "Привет, Иван Петров!"
+
     def test_outbound_plain_command_untouched(self):
         assert sanitize_markdown("/new /status") == "/new /status"
 
