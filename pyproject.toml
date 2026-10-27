@@ -21,6 +21,8 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+# CI чекаутит hermes-agent внутрь workspace — его код не наш юрисдикция
+extend-exclude = ["hermes-agent", "dist"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
