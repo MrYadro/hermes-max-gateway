@@ -76,7 +76,8 @@ async def test_connect_registers_bot_commands_and_locks():
     adapter = make_adapter(client, transport)
     assert await adapter.connect()
     assert adapter.is_connected and transport.started
-    assert client.commands and client.commands[0] == {"name": "new", "description": "Новая сессия"}
+    assert client.commands and client.commands[0] == {"name": "new", "description": "🆕 Новая сессия"}
+    assert client.commands[5] == {"name": "assistant", "description": "🧭 Переключить ассистента"}
     await adapter.disconnect()
 
 
@@ -188,6 +189,16 @@ async def test_marker_in_memory_extra_wins_over_file(tmp_path, monkeypatch):
     adapter = MaxAdapter(FakeCfg(extra={"marker": 9}), client=FakeClient(),
                          transport=FakeTransport())
     assert adapter._marker == 9                     # живой процесс знает свежее значение
+
+
+def test_gateway_commands_menu_complete():
+    """Меню бота: assistant зарегистрирован, кнопочные слова (always/cancel)
+    в меню не висят, лимит MAX ≤32 соблюдён."""
+    from maxbot.adapter import GATEWAY_COMMANDS
+    names = [n for n, _ in GATEWAY_COMMANDS]
+    assert "assistant" in names
+    assert "always" not in names and "cancel" not in names
+    assert len(names) <= 32 and len(set(names)) == len(names)
 
 
 async def test_connect_warns_when_set_commands_fails(caplog):
